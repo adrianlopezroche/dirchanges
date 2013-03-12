@@ -15,6 +15,13 @@
 #define FILENAME_MAX_SIZE 256
 #define ARCHIVE_BUFFER_SIZE 256
 
+#define ISFLAG(a,b) ((a & b) == b)
+#define SETFLAG(a,b) (a |= b)
+
+#define F_PRINTHASHES 0x0001
+
+unsigned long flags = 0;
+
 struct string
 {
 	char *chars;
@@ -306,6 +313,8 @@ void directoryentrycollection_sort(struct directoryentrycollection *collection)
 
 void directoryentrycollection_compare(struct directoryentrycollection *c1, struct directoryentrycollection *c2, char *pathfrom, char *pathto)
 {
+	int differencesfound = 0;
+
 	directoryentrycollection_sort(c1);
 	directoryentrycollection_sort(c2);
 
@@ -321,31 +330,47 @@ void directoryentrycollection_compare(struct directoryentrycollection *c1, struc
 			if (c1->entries[c1pos].type == DT_REG && c2->entries[c2pos].type == DT_REG)
 			{
 				if (!directoryentry_equalbydigest(&c1->entries[c1pos], &c2->entries[c2pos]))
+				{
+					differencesfound = 1;				
 					printf("Different in %s: %s\n", pathto, c2->entries[c2pos].fullpath.chars);
+				}
 			}
 			else if (c1->entries[c1pos].type != c2->entries[c2pos].type)
+			{
+				differencesfound = 1;
 				printf("Different in %s: %s\n", pathto, c2->entries[c2pos].fullpath.chars);
+			}
 
 			c1pos++;
 			c2pos++;
 		}
 		else if (cmp < 0)
 		{
+			differencesfound = 1;
 			printf("Only in %s: %s\n", pathfrom, c1->entries[c1pos].fullpath.chars);
 			c1pos++;
 		}
 		else
 		{
+			differencesfound = 1;
 			printf("Only in %s: %s\n", pathto, c2->entries[c2pos].fullpath.chars);
 			c2pos++;
 		}
 	}
 
-	while (c1pos < c1->length)
-		printf("Only in %s: %s\n", pathfrom, c1->entries[c1pos++].fullpath.chars);
+	if (c1pos < c1->length || c2pos < c2->length)
+	{
+		differencesfound = 1;
+
+		while (c1pos < c1->length)
+			printf("Only in %s: %s\n", pathfrom, c1->entries[c1pos++].fullpath.chars);
 	
-	while (c2pos < c2->length)
-		printf("Only in %s: %s\n", pathto, c2->entries[c2pos++].fullpath.chars);
+		while (c2pos < c2->length)
+			printf("Only in %s: %s\n", pathto, c2->entries[c2pos++].fullpath.chars);
+	}
+
+	if (!differencesfound)
+		printf("No differences found.\n");
 }
 
 void directoryentry_addfromfilesystem(struct directoryentrycollection *collection, char *path, char *root)
@@ -582,6 +607,10 @@ int main(int argc, char **argv)
 			troot = optarg;
 			break;
 
+		case 'h':
+			SETFLAG(flags, F_PRINTHASHES);
+			break;
+
 		case '?':
 			errors = 1;
 			break;
@@ -614,14 +643,20 @@ int main(int argc, char **argv)
 	struct stat f2stat;
 
 	if (strcmp(argv[optind], "-") != 0 && lstat(argv[optind], &f1stat) != 0)
+	{
+		fprintf(stderr, "%s: cannot access %s.\n", argv[0], argv[optind]);
 		return 0;
+	}
 
  	if (strcmp(argv[optind+1], "-") != 0 && lstat(argv[optind+1], &f2stat) != 0)
+	{
+		fprintf(stderr, "%s: cannot access %s.\n", argv[0], argv[optind+1]); 
 		return 0;
+	}
 
 	if (strcmp(argv[optind], "-") == 0 && strcmp(argv[optind+1], "-") == 0)
 	{
-		fprintf(stderr, "%s can't read twice from stdin.\n", argv[0]);
+		fprintf(stderr, "%s: can't read twice from stdin.\n", argv[0]);
 		return 0;
 	}
 
@@ -649,8 +684,7 @@ int main(int argc, char **argv)
 
 	fprintf(stderr, "\n");
 
-	if (collection1 != 0 && collection2 != 0)
-		directoryentrycollection_compare(collection1, collection2, argv[optind], argv[optind+1]);
+	directoryentrycollection_compare(collection1, collection2, argv[optind], argv[optind+1]);
 	
 	directoryentrycollection_free(collection2);
 	directoryentrycollection_free(collection1);
