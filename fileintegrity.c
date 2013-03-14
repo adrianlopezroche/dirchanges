@@ -627,13 +627,17 @@ int main(int argc, char **argv)
 	int nonoptc = argc - optind;
 	if (nonoptc < 1)
 	{
-		fprintf(stderr, "%s: must specify FROM parameter.\n", argv[0]);
+		fprintf(stderr, "%s: must specify FROM and TO arguments.\n", argv[0]);
 		errors = 1;
 	}
-
-	if (nonoptc < 2)
+	else if (nonoptc < 2 && !ISFLAG(flags, F_PRINTHASHES))
 	{
-		fprintf(stderr, "%s: must specify TO parameter.\n", argv[0]);
+		fprintf(stderr, "%s: must specify TO argument.\n", argv[0]);
+		errors = 1;
+	}
+	else if ((nonoptc > 1 && ISFLAG(flags, F_PRINTHASHES)) || nonoptc > 2)
+	{
+		fprintf(stderr, "%s: too many arguments supplied.\n", argv[0]);
 		errors = 1;
 	}
 
@@ -655,16 +659,19 @@ int main(int argc, char **argv)
 		return 0;
 	}
 
- 	if (strcmp(argv[optind+1], "-") != 0 && lstat(argv[optind+1], &f2stat) != 0)
+	if (!ISFLAG(flags, F_PRINTHASHES))
 	{
-		fprintf(stderr, "%s: cannot access %s.\n", argv[0], argv[optind+1]); 
-		return 0;
-	}
+	 	if (strcmp(argv[optind+1], "-") != 0 && lstat(argv[optind+1], &f2stat) != 0)
+		{
+			fprintf(stderr, "%s: cannot access %s.\n", argv[0], argv[optind+1]); 
+			return 0;
+		}
 
-	if (strcmp(argv[optind], "-") == 0 && strcmp(argv[optind+1], "-") == 0)
-	{
-		fprintf(stderr, "%s: can't read twice from stdin.\n", argv[0]);
-		return 0;
+		if (strcmp(argv[optind], "-") == 0 && strcmp(argv[optind+1], "-") == 0)
+		{
+			fprintf(stderr, "%s: can't read twice from stdin.\n", argv[0]);
+			return 0;
+		}
 	}
 
 	if (strcmp(argv[optind], "-") == 0 || S_ISREG(f1stat.st_mode))
@@ -678,15 +685,18 @@ int main(int argc, char **argv)
 		collection1 = directoryentrycollection_getfromfilesystem(argv[optind], froot);
 	}
 
-	if (strcmp(argv[optind+1], "-") == 0 || S_ISREG(f2stat.st_mode))
+	if (!ISFLAG(flags, F_PRINTHASHES))
 	{
-		fprintf(stderr, "\nReading from archive \"%s\"...\n", argv[optind+1]);
-		collection2 = directoryentrycollection_getfromarchive(argv[optind+1], troot);
-	}
-	else if (S_ISDIR(f2stat.st_mode))
-	{
-		fprintf(stderr, "\nReading from directory \"%s\"...\n", argv[optind+1]);
-		collection2 = directoryentrycollection_getfromfilesystem(argv[optind+1], troot);
+		if (strcmp(argv[optind+1], "-") == 0 || S_ISREG(f2stat.st_mode))
+		{
+			fprintf(stderr, "\nReading from archive \"%s\"...\n", argv[optind+1]);
+			collection2 = directoryentrycollection_getfromarchive(argv[optind+1], troot);
+		}
+		else if (S_ISDIR(f2stat.st_mode))
+		{
+			fprintf(stderr, "\nReading from directory \"%s\"...\n", argv[optind+1]);
+			collection2 = directoryentrycollection_getfromfilesystem(argv[optind+1], troot);
+		}
 	}
 
 	fprintf(stderr, "\n");
@@ -695,8 +705,10 @@ int main(int argc, char **argv)
 		directoryentrycollection_printhashes(collection1, argv[optind]);
 	else
 		directoryentrycollection_compare(collection1, collection2, argv[optind], argv[optind+1]);
+
+	if (collection2)
+		directoryentrycollection_free(collection2);
 	
-	directoryentrycollection_free(collection2);
 	directoryentrycollection_free(collection1);
 
 	return 0;
