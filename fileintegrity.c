@@ -278,14 +278,14 @@ void directoryentry_print(struct directoryentry *de)
 	int x;
 
 	if (de->type == DT_REG)
+	{
 		for (x = 0; x < SHA1_DIGEST_SIZE; ++x)
-			printf("%02x", de->sha1[x]);
-	else
-		for (x = 0; x < SHA1_DIGEST_SIZE; ++x)
-			printf("--");
-		
+			printf("%02x", de->sha1[x]);		
 
-	printf(" %s\n", de->name.chars);
+		printf(" ");
+	}
+
+	printf("%s\n", de->name.chars);
 }
 
 int directoryentry_equalbydigest(const struct directoryentry *de1, const struct directoryentry *de2)
@@ -371,6 +371,13 @@ void directoryentrycollection_compare(struct directoryentrycollection *c1, struc
 
 	if (!differencesfound)
 		printf("No differences found.\n");
+}
+
+void directoryentrycollection_printhashes(struct directoryentrycollection *collection, char *root)
+{
+	size_t e;
+	for (e = 0; e < collection->length; ++e)
+		directoryentry_print(collection->entries + e);
 }
 
 void directoryentry_addfromfilesystem(struct directoryentrycollection *collection, char *path, char *root)
@@ -684,7 +691,10 @@ int main(int argc, char **argv)
 
 	fprintf(stderr, "\n");
 
-	directoryentrycollection_compare(collection1, collection2, argv[optind], argv[optind+1]);
+	if (ISFLAG(flags, F_PRINTHASHES))
+		directoryentrycollection_printhashes(collection1, argv[optind]);
+	else
+		directoryentrycollection_compare(collection1, collection2, argv[optind], argv[optind+1]);
 	
 	directoryentrycollection_free(collection2);
 	directoryentrycollection_free(collection1);
