@@ -604,10 +604,6 @@ void directoryentry_addfromfilesystem(struct directoryentrycollection *collectio
 				fprintf(stderr, "error obtaining hash for %s\n", s.chars);
 			}
 		}
-		//else
-		//{
-		//	fprintf(stderr, "skipping %s\n", s.chars);
-		//}
 
 		string_free(s);
 	}
@@ -692,7 +688,6 @@ struct directoryentrycollection *directoryentrycollection_getfromarchive(char *p
 			}
 			else
 			{
-				//fprintf(stderr, "skipping %s\n", s.chars);
 				archive_read_data_skip(a);
 			}
 
@@ -721,7 +716,6 @@ struct directoryentrycollection *directoryentrycollection_getfromarchive(char *p
 			}
 			else
 			{
-				//fprintf(stderr, "skipping %s\n", s.chars);
 				archive_read_data_skip(a);
 			}
 
@@ -732,7 +726,6 @@ struct directoryentrycollection *directoryentrycollection_getfromarchive(char *p
 			struct string s = string_fromchars(archive_entry_pathname(entry));
 			string_removetrailingcharacter(&s, '/');
 
-			//fprintf(stderr, "skipping %s\n", s.chars);
 			archive_read_data_skip(a);
 
 			string_free(s);
