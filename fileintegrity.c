@@ -46,13 +46,6 @@ struct directoryentrycollection
 	struct directoryentry *entries;
 };
 
-struct libarchivedata
-{
-	struct string name;
-	FILE *archive;
-	unsigned char buffer[ARCHIVE_BUFFER_SIZE];	
-};
-
 struct BUFFEREDFILE
 {
 	FILE *stream;
@@ -66,6 +59,14 @@ struct BUFFEREDFILE
 	uint64_t buffer0end;
 	uint64_t buffer1start;
 	uint64_t buffer1end;
+};
+
+struct libarchivedata
+{
+	FILE *stream;
+	struct string name;
+	struct BUFFEREDFILE *bstream;
+	unsigned char buffer[ARCHIVE_BUFFER_SIZE];	
 };
 
 struct BUFFEREDFILE *bufferedfile_init(FILE *stream, size_t maxlookahead)
@@ -111,7 +112,7 @@ int Intersection(uint64_t *i0, uint64_t *i1, uint64_t a0, uint64_t a1, uint64_t 
 	return 1;
 }
 
-size_t bufferedfile_getbytes(struct BUFFEREDFILE *file, void *buf, size_t count)
+size_t bufferedfile_getbytes(void *buf, size_t count, struct BUFFEREDFILE *file)
 {
 	int firstbuffer;
 	size_t bytesread;
@@ -321,11 +322,11 @@ int getfiledigest(char *path, uint8_t *digest)
 	
 	uint8_t buf[ARCHIVE_BUFFER_SIZE];
 
-	size_t read = bufferedfile_getbytes(bf, buf, ARCHIVE_BUFFER_SIZE);
+	size_t read = bufferedfile_getbytes(buf, ARCHIVE_BUFFER_SIZE, bf);
 	while (read > 0)
 	{
 		SHA1_Update(&sha1ctx, buf, read);
-		read = bufferedfile_getbytes(bf, buf, ARCHIVE_BUFFER_SIZE);
+		read = bufferedfile_getbytes(buf, ARCHIVE_BUFFER_SIZE, bf);
 	}
 
 	SHA1_Final(&sha1ctx, digest);
@@ -377,15 +378,19 @@ int openarchive(struct archive *a, void *data)
 
 	if (strcmp(ldata->name.chars, "-") != 0)
 	{
-		ldata->archive = fopen(ldata->name.chars, "rb");
+		ldata->stream = fopen(ldata->name.chars, "rb");
+		if (!ldata->stream)
+			return ARCHIVE_FATAL;
 	}
 	else
 	{
 		freopen(NULL, "rb", stdin);
-		ldata->archive = stdin;
+		ldata->stream = stdin;
 	}
 
-	if (!ldata->archive)
+	ldata->bstream = bufferedfile_init(ldata->stream, ARCHIVE_BUFFER_SIZE);
+
+	if (!ldata->bstream)
 		return ARCHIVE_FATAL;
 
 	return ARCHIVE_OK;
@@ -395,7 +400,7 @@ ssize_t readarchive(struct archive *a, void *data, const void **buffer)
 {
 	struct libarchivedata *ldata = data;
 
-	size_t read = fread(ldata->buffer, 1, ARCHIVE_BUFFER_SIZE, ldata->archive);
+	size_t read = bufferedfile_getbytes(ldata->buffer, ARCHIVE_BUFFER_SIZE, ldata->bstream);
 	*buffer = ldata->buffer;
 
 	return read;
@@ -406,7 +411,9 @@ int closearchive(struct archive *a, void *data)
 	struct libarchivedata *ldata = data;
 
 	if (strcmp(ldata->name.chars, "-") != 0)
-		fclose(ldata->archive);
+		fclose(ldata->stream);
+
+	bufferedfile_destroy(ldata->bstream);
 
 	return ARCHIVE_OK;
 }
