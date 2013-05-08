@@ -68,7 +68,7 @@ struct BUFFEREDFILE
 	uint64_t buffer1end;
 };
 
-struct BUFFEREDFILE *bufferedfile_open_read(char *path, size_t maxlookahead)
+struct BUFFEREDFILE *bufferedfile_init(FILE *stream, size_t maxlookahead)
 {
 	struct BUFFEREDFILE *f = malloc(sizeof(struct BUFFEREDFILE));
 	if (!f) return 0;
@@ -85,13 +85,7 @@ struct BUFFEREDFILE *bufferedfile_open_read(char *path, size_t maxlookahead)
 	f->buffer1start = 0;
 	f->buffer1end = 0;
 
-	f->stream = fopen(path, "rb");
-	if (!f->stream)
-	{
-		free(f->buffer);
-		return 0;
-	}
-
+	f->stream = stream;
 	f->maxlookahead = maxlookahead;
 	f->fpos = 0;
 	f->rollback = 0;
@@ -100,9 +94,8 @@ struct BUFFEREDFILE *bufferedfile_open_read(char *path, size_t maxlookahead)
 	return f;
 }
 
-void bufferedfile_close(struct BUFFEREDFILE *f)
+void bufferedfile_destroy(struct BUFFEREDFILE *f)
 {
-	fclose(f->stream);
 	free(f->buffer);
 	free(f);
 }
@@ -118,7 +111,7 @@ int Intersection(uint64_t *i0, uint64_t *i1, uint64_t a0, uint64_t a1, uint64_t 
 	return 1;
 }
 
-size_t bufferedfile_getbytes(struct BUFFEREDFILE *file, void *buf, size_t count, int buffered)
+size_t bufferedfile_getbytes(struct BUFFEREDFILE *file, void *buf, size_t count)
 {
 	int firstbuffer;
 	size_t bytesread;
@@ -309,26 +302,39 @@ void directoryentrycollection_free(struct directoryentrycollection *collection)
 	free(collection);
 }
 
-void getfiledigest(char *path, uint8_t *digest)
+int getfiledigest(char *path, uint8_t *digest)
 {
 	SHA1_CTX sha1ctx;
 
+	FILE *stream = fopen(path, "rb");
+	if (!stream)
+		return 0;
+
 	SHA1_Init(&sha1ctx);
-	
-	struct BUFFEREDFILE *bf = bufferedfile_open_read(path, ARCHIVE_BUFFER_SIZE);
+
+	struct BUFFEREDFILE *bf = bufferedfile_init(stream, ARCHIVE_BUFFER_SIZE);
+	if (!bf)
+	{
+		fclose(stream);
+		return 0;
+	}
 	
 	uint8_t buf[ARCHIVE_BUFFER_SIZE];
 
-	size_t read = bufferedfile_getbytes(bf, buf, ARCHIVE_BUFFER_SIZE, 1);
+	size_t read = bufferedfile_getbytes(bf, buf, ARCHIVE_BUFFER_SIZE);
 	while (read > 0)
 	{
 		SHA1_Update(&sha1ctx, buf, read);
-		read = bufferedfile_getbytes(bf, buf, ARCHIVE_BUFFER_SIZE, 1);
+		read = bufferedfile_getbytes(bf, buf, ARCHIVE_BUFFER_SIZE);
 	}
 
 	SHA1_Final(&sha1ctx, digest);
 
-	bufferedfile_close(bf);
+	fclose(stream);
+
+	bufferedfile_destroy(bf);
+
+	return 1;
 }
 
 char *mgetcwd()
@@ -585,12 +591,18 @@ void directoryentry_addfromfilesystem(struct directoryentrycollection *collectio
 			entry.name = string_fromchars(rpath);	
 			entry.fullpath = string_fromchars(s.chars);
 			entry.type = dirinfo->d_type;
-			getfiledigest(s.chars, entry.sha1);
 
-			directoryentrycollection_add(collection, &entry);
+			if (getfiledigest(s.chars, entry.sha1))
+			{
+				directoryentrycollection_add(collection, &entry);
 
-			if (ISFLAG(flags, F_VERBOSE))
-				fprintf(stderr, "%s\n", s.chars);	
+				if (ISFLAG(flags, F_VERBOSE))
+					fprintf(stderr, "%s\n", s.chars);	
+			}
+			else
+			{
+				fprintf(stderr, "error obtaining hash for %s\n", s.chars);
+			}
 		}
 		//else
 		//{
