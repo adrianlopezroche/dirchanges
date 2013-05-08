@@ -19,6 +19,7 @@
 #define SETFLAG(a,b) (a |= b)
 
 #define F_PRINTHASHES 0x0001
+#define F_VERBOSE 0x0002
 
 unsigned long flags = 0;
 
@@ -375,6 +376,8 @@ void directoryentrycollection_compare(struct directoryentrycollection *c1, struc
 
 void directoryentrycollection_printhashes(struct directoryentrycollection *collection, char *root)
 {
+	printf("DIRHASH1\n");
+
 	size_t e;
 	for (e = 0; e < collection->length; ++e)
 		directoryentry_print(collection->entries + e);
@@ -424,8 +427,10 @@ void directoryentry_addfromfilesystem(struct directoryentrycollection *collectio
 				entry.fullpath = string_fromchars(s.chars);
 				entry.type = dirinfo->d_type;
 
-				directoryentrycollection_add(collection, &entry);			
-				fprintf(stderr, "%s\n", s.chars);	
+				directoryentrycollection_add(collection, &entry);
+
+				if (ISFLAG(flags, F_VERBOSE))		
+					fprintf(stderr, "%s\n", s.chars);	
 			}
 
 			directoryentry_addfromfilesystem(collection, s.chars, root);
@@ -440,7 +445,8 @@ void directoryentry_addfromfilesystem(struct directoryentrycollection *collectio
 
 			directoryentrycollection_add(collection, &entry);
 
-			fprintf(stderr, "%s\n", s.chars);	
+			if (ISFLAG(flags, F_VERBOSE))
+				fprintf(stderr, "%s\n", s.chars);	
 		}
 		//else
 		//{
@@ -525,7 +531,8 @@ struct directoryentrycollection *directoryentrycollection_getfromarchive(char *p
 		
 				directoryentrycollection_add(collection, &direntry);
 		
-				fprintf(stderr, "%s\n", s.chars);	
+				if (ISFLAG(flags, F_VERBOSE))
+					fprintf(stderr, "%s\n", s.chars);	
 			}
 			else
 			{
@@ -553,7 +560,8 @@ struct directoryentrycollection *directoryentrycollection_getfromarchive(char *p
 
 				directoryentrycollection_add(collection, &direntry);
 		
-				fprintf(stderr, "%s\n", s.chars);	
+				if (ISFLAG(flags, F_VERBOSE))
+					fprintf(stderr, "%s\n", s.chars);	
 			}
 			else
 			{
@@ -583,13 +591,19 @@ struct directoryentrycollection *directoryentrycollection_getfromarchive(char *p
 	return collection;
 }
 
+struct directoryentrycollection *directoryentrycollection_getfromhashfile(char *path, char *root)
+{
+	return 0;
+}
+
 int main(int argc, char **argv)
 {	
 	static struct option long_options[] = 
 	{
 		{ "froot", 1, 0, 'f' },
 		{ "troot", 1, 0, 't' },
-		{ "hash", 0, 0, 'h' },
+		{ "verbose", 0, 0, 'v' },
+		{ "printhashes", 0, 0, 'h' },
 		{ 0, 0, 0, 0 }
 	};
 
@@ -616,6 +630,10 @@ int main(int argc, char **argv)
 
 		case 'h':
 			SETFLAG(flags, F_PRINTHASHES);
+			break;
+
+		case 'v':
+			SETFLAG(flags, F_VERBOSE);
 			break;
 
 		case '?':
@@ -676,12 +694,16 @@ int main(int argc, char **argv)
 
 	if (strcmp(argv[optind], "-") == 0 || S_ISREG(f1stat.st_mode))
 	{
-		fprintf(stderr, "Reading from archive \"%s\"...\n", argv[optind]);
+		if (ISFLAG(flags, F_VERBOSE))
+			fprintf(stderr, "Reading from archive \"%s\"...\n", argv[optind]);
+
 		collection1 = directoryentrycollection_getfromarchive(argv[optind], froot);
 	}
 	else if (S_ISDIR(f1stat.st_mode))
 	{
-		fprintf(stderr, "Reading from directory \"%s\"...\n", argv[optind]);
+		if (ISFLAG(flags, F_VERBOSE))
+			fprintf(stderr, "Reading from directory \"%s\"...\n", argv[optind]);
+	
 		collection1 = directoryentrycollection_getfromfilesystem(argv[optind], froot);
 	}
 
@@ -689,17 +711,22 @@ int main(int argc, char **argv)
 	{
 		if (strcmp(argv[optind+1], "-") == 0 || S_ISREG(f2stat.st_mode))
 		{
-			fprintf(stderr, "\nReading from archive \"%s\"...\n", argv[optind+1]);
+			if (ISFLAG(flags, F_VERBOSE))
+				fprintf(stderr, "\nReading from archive \"%s\"...\n", argv[optind+1]);
+
 			collection2 = directoryentrycollection_getfromarchive(argv[optind+1], troot);
 		}
 		else if (S_ISDIR(f2stat.st_mode))
-		{
-			fprintf(stderr, "\nReading from directory \"%s\"...\n", argv[optind+1]);
+		{	
+			if (ISFLAG(flags, F_VERBOSE))
+				fprintf(stderr, "\nReading from directory \"%s\"...\n", argv[optind+1]);
+
 			collection2 = directoryentrycollection_getfromfilesystem(argv[optind+1], troot);
 		}
 	}
 
-	fprintf(stderr, "\n");
+	if (ISFLAG(flags, F_VERBOSE))
+		fprintf(stderr, "\n");
 
 	if (ISFLAG(flags, F_PRINTHASHES))
 		directoryentrycollection_printhashes(collection1, argv[optind]);
