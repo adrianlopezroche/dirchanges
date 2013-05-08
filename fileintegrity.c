@@ -17,6 +17,8 @@
 
 #define ISFLAG(a,b) ((a & b) == b)
 #define SETFLAG(a,b) (a |= b)
+#define MAX(X, Y) (X > Y ? X : Y)
+#define MIN(X, Y) (X < Y ? X : Y)
 
 #define F_PRINTHASHES 0x0001
 #define F_VERBOSE 0x0002
@@ -50,6 +52,148 @@ struct libarchivedata
 	FILE *archive;
 	unsigned char buffer[ARCHIVE_BUFFER_SIZE];	
 };
+
+struct BUFFEREDFILE
+{
+	FILE *stream;
+	size_t maxlookahead;
+	uint64_t rollback;
+	uint64_t fpos;
+	int eof;
+
+	void *buffer;
+	uint64_t buffer0start;
+	uint64_t buffer0end;
+	uint64_t buffer1start;
+	uint64_t buffer1end;
+};
+
+struct BUFFEREDFILE *bufferedfile_open_read(char *path, size_t maxlookahead)
+{
+	struct BUFFEREDFILE *f = malloc(sizeof(struct BUFFEREDFILE));
+	if (!f) return 0;
+
+	f->buffer = malloc(maxlookahead * 2);
+	if (!f->buffer)
+	{
+		free(f);
+		return 0;
+	}
+
+	f->buffer0start = 0;
+	f->buffer0end = 0;
+	f->buffer1start = 0;
+	f->buffer1end = 0;
+
+	f->stream = fopen(path, "rb");
+	if (!f->stream)
+	{
+		free(f->buffer);
+		return 0;
+	}
+
+	f->maxlookahead = maxlookahead;
+	f->fpos = 0;
+	f->rollback = 0;
+	f->eof = 0;
+
+	return f;
+}
+
+void bufferedfile_close(struct BUFFEREDFILE *f)
+{
+	fclose(f->stream);
+	free(f->buffer);
+	free(f);
+}
+
+int Intersection(uint64_t *i0, uint64_t *i1, uint64_t a0, uint64_t a1, uint64_t b0, uint64_t b1)
+{
+	if (a1 <= b0 || b1 <= a0)
+		return 0;
+
+	*i0 = MAX(a0, b0);
+	*i1 = MIN(a1, b1);
+
+	return 1;
+}
+
+size_t bufferedfile_getbytes(struct BUFFEREDFILE *file, void *buf, size_t count, int buffered)
+{
+	int firstbuffer;
+	size_t bytesread;
+	uint64_t i0;
+	uint64_t i1;
+
+	if (count > file->maxlookahead)
+		return 0;
+
+	if (file->buffer0end <= file->buffer1end)
+		firstbuffer = 0;
+	else
+		firstbuffer = 1;
+
+	/* Read past end of buffered data? */
+	if (!file->eof && file->fpos + count > MAX(file->buffer0end, file->buffer1end))
+	{
+		/* Does buffer 0 have stale contents? */
+		if (firstbuffer == 0)
+		{
+			/* Replace buffer 0's contents with fresh data. */
+			file->buffer0start = file->buffer1end;
+
+			size_t read = fread(file->buffer, 1, file->maxlookahead, file->stream);
+			if (read != count)
+				file->eof = 1;
+
+			file->buffer0end = file->buffer0start + read;
+		}
+		else
+		{
+			/* Replace buffer 1's contents with fresh data. */
+			file->buffer1start = file->buffer0end;
+
+			size_t read = fread(file->buffer + file->maxlookahead, 1, file->maxlookahead, file->stream);
+			if (read != count)
+				file->eof = 1;
+
+			file->buffer1end = file->buffer1start + read;
+		}
+	}
+
+	bytesread = 0;
+
+	/* Does read operation include data from buffer 0? */
+	if (Intersection(&i0, &i1, file->fpos, file->fpos + count, file->buffer0start, file->buffer0end))
+	{
+		/* Copy contents from buffer 0 onto target buf. */
+		const size_t offset = (size_t)(i0 - file->buffer0start + firstbuffer == 0 ? 0 : file->maxlookahead);
+		
+		bytesread = (size_t)(i1 - i0);
+
+		memcpy(buf + offset, file->buffer, bytesread); 
+	}
+
+	/* Does read operation include data from buffer 1? */
+	if (Intersection(&i0, &i1, file->fpos, file->fpos + count, file->buffer1start, file->buffer1end))
+	{
+		/* Copy contents from buffer 1 onto target buf. */
+		const size_t offset = (size_t)(i0 - file->buffer1start + firstbuffer == 1 ? 0 : file->maxlookahead);
+
+		bytesread = (size_t)(i1 - i0);
+
+		memcpy(buf + offset, file->buffer + file->maxlookahead, bytesread);
+	}
+
+	file->fpos += bytesread;
+
+	return bytesread;
+}
+
+void bufferedfile_ungetbytes(struct BUFFEREDFILE *file)
+{
+	file->fpos = file->rollback;
+}
 
 struct string string_fromchars(const char *chars)
 {
@@ -171,20 +315,20 @@ void getfiledigest(char *path, uint8_t *digest)
 
 	SHA1_Init(&sha1ctx);
 	
-	FILE *f = fopen(path, "rb");
+	struct BUFFEREDFILE *bf = bufferedfile_open_read(path, ARCHIVE_BUFFER_SIZE);
 	
 	uint8_t buf[ARCHIVE_BUFFER_SIZE];
 
-	size_t read = fread(buf, sizeof(uint8_t), ARCHIVE_BUFFER_SIZE, f);
+	size_t read = bufferedfile_getbytes(bf, buf, ARCHIVE_BUFFER_SIZE, 1);
 	while (read > 0)
 	{
 		SHA1_Update(&sha1ctx, buf, read);
-		read = fread(buf, sizeof(uint8_t), ARCHIVE_BUFFER_SIZE, f);
+		read = bufferedfile_getbytes(bf, buf, ARCHIVE_BUFFER_SIZE, 1);
 	}
 
 	SHA1_Final(&sha1ctx, digest);
 
-	fclose(f);
+	bufferedfile_close(bf);
 }
 
 char *mgetcwd()
