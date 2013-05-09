@@ -203,6 +203,11 @@ struct string string_fromchars(const char *chars)
 	return s;
 }
 
+int string_split(struct string *s, struct string **parts)
+{
+	return 0;
+}
+
 void string_append(struct string *s, char *chars)
 {
 	size_t needed = strlen(s->chars) + strlen(chars) + 1;
@@ -232,9 +237,22 @@ void string_removetrailingcharacter(struct string *s, char c)
 	s->chars[spos + 1] = '\0';
 }
 
+int string_parse_rawhex(struct string *s, uint8_t *buf)
+{
+	return 0;
+}
+
 void string_free(struct string s)
 {
 	free(s.chars);
+}
+
+void string_freemany(struct string *s, int count)
+{
+	int x;
+
+	for (x = 0; x < count; ++x)
+		string_free(s[x]);
 }
 
 char *relativepath(const char *path, const char *root)
@@ -443,7 +461,7 @@ void directoryentry_print(struct directoryentry *de)
 		printf(" ");
 	}
 
-	printf("%s\n", de->name.chars);
+	printf("%s\n", de->fullpath.chars);
 }
 
 int directoryentry_equalbydigest(const struct directoryentry *de1, const struct directoryentry *de2)
@@ -462,6 +480,52 @@ int directoryentry_comparebyfilename(const void *de1, const void *de2)
 	const struct directoryentry *c2 = de2;
 
 	return strcmp(c1->name.chars, c2->name.chars);
+}
+
+int directoryentry_getfromstring(struct string *s, struct directoryentry *entry)
+{
+	int numparts;
+	struct string *parts;
+
+	numparts = string_split(s, &parts);
+	if (numparts >= 2)
+	{
+		if (strcmp(parts[0].chars, "R") == 0)
+		{	
+			if (numparts >= 3)
+			{
+				entry->type = DT_REG;
+				entry->fullpath = parts[2];
+
+				if (!string_parse_rawhex(&parts[1], entry->sha1))
+				{
+					string_freemany(parts, numparts);
+					return 0;
+				}
+			}
+			else
+			{
+				string_freemany(parts, numparts);
+				return 0;
+			}
+		}
+		else if (strcmp(parts[0].chars, "D"))
+		{
+			entry->type = DT_DIR;
+			entry->fullpath = parts[1];
+		}
+		else
+		{
+			string_freemany(parts, numparts);
+			return 0;
+		}
+
+		entry->name = string_fromchars("");
+	}
+
+	string_freemany(parts, numparts);
+
+	return 1;
 }
 
 void directoryentrycollection_sort(struct directoryentrycollection *collection)
@@ -749,11 +813,13 @@ struct directoryentrycollection *directoryentrycollection_getfromarchive(char *p
 
 struct directoryentrycollection *directoryentrycollection_getfromhashfile(struct BUFFEREDFILE *bfile, char *root)
 {
-	uint8_t buf[9];
-	if (bufferedfile_getbytes(buf, 8, bfile) == 8)
+	struct directoryentry entry;
+
+	uint8_t buf[10];
+	if (bufferedfile_getbytes(buf, 9, bfile) == 9)
 	{
-		buf[8] = '\0';
-		if (strcmp((char*)buf, "DIRHASH1") != 0)
+		buf[9] = '\0';
+		if (strcmp((char*)buf, "DIRHASH1\n") != 0)
 		{
 			bufferedfile_ungetbytes(bfile);
 			return 0;		
@@ -763,6 +829,32 @@ struct directoryentrycollection *directoryentrycollection_getfromhashfile(struct
 			struct directoryentrycollection *collection = directoryentrycollection_new();
 			if (!collection)
 				exit(1);
+
+			struct string line = string_fromchars("");
+
+			char c[2];
+			c[1] = 0;
+
+			while (bufferedfile_getbytes(c, 1, bfile) == 1)
+			{
+				switch (c[0])
+				{
+					case '\n':
+						if (directoryentry_getfromstring(&line, &entry))
+							directoryentrycollection_add(collection, &entry);
+						else
+							exit(1);
+
+						line.chars[0] = '\0';
+						break;
+
+					default:
+						string_append(&line, c);
+						break;
+				}
+			}
+
+			string_free(line);
 
 			return collection;
 		}
