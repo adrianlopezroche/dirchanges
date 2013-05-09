@@ -72,13 +72,14 @@ struct libarchivedata
 struct BUFFEREDFILE *bufferedfile_init(FILE *stream, size_t maxlookahead)
 {
 	struct BUFFEREDFILE *f = malloc(sizeof(struct BUFFEREDFILE));
-	if (!f) return 0;
+	if (!f) 
+		exit(1);
 
 	f->buffer = malloc(maxlookahead * 2);
 	if (!f->buffer)
 	{
 		free(f);
-		return 0;
+		exit(1);
 	}
 
 	f->buffer0start = 0;
@@ -196,7 +197,7 @@ struct string string_fromchars(const char *chars)
 	s.chars = malloc(s.allocated);
 
 	if (s.chars == 0)
-		s.allocated = 0;
+		exit(1);
 
 	strcpy(s.chars, chars);
 
@@ -265,7 +266,10 @@ struct directoryentrycollection *directoryentrycollection_new()
 
 	collection->entries = malloc(sizeof(struct directoryentry));
 	if (collection->entries == 0)
+	{
+		free(collection);
 		exit(1);
+	}
 
 	collection->allocated = 1;
 	collection->length = 0;
@@ -345,7 +349,7 @@ char *mgetcwd()
 
 	buf = malloc(bufsize);
 	if (!buf)
-		return 0;
+		exit(1);
 
 	while (getcwd(buf, bufsize) == 0)
 	{
