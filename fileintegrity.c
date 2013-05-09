@@ -747,8 +747,28 @@ struct directoryentrycollection *directoryentrycollection_getfromarchive(char *p
 	return collection;
 }
 
-struct directoryentrycollection *directoryentrycollection_getfromhashfile(char *path, char *root)
+struct directoryentrycollection *directoryentrycollection_getfromhashfile(struct BUFFEREDFILE *bfile, char *root)
 {
+	uint8_t buf[9];
+	if (bufferedfile_getbytes(buf, 8, bfile) == 8)
+	{
+		buf[8] = '\0';
+		if (strcmp((char*)buf, "DIRHASH1") != 0)
+		{
+			bufferedfile_ungetbytes(bfile);
+			return 0;		
+		}
+		else
+		{
+			struct directoryentrycollection *collection = directoryentrycollection_new();
+			if (!collection)
+				exit(1);
+
+			return collection;
+		}
+	}
+
+	bufferedfile_ungetbytes(bfile);
 	return 0;
 }
 
