@@ -361,7 +361,7 @@ char *mgetcwd()
 			if (!newbuf)
 			{
 				free(buf);
-				return 0;
+				exit(1);
 			}
 			
 			buf = newbuf;
