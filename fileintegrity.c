@@ -122,16 +122,11 @@ size_t bufferedfile_getbytes(void *buf, size_t count, struct BUFFEREDFILE *file)
 	if (count > file->maxlookahead)
 		return 0;
 
-	if (file->buffer0end <= file->buffer1end)
-		firstbuffer = 0;
-	else
-		firstbuffer = 1;
-
 	/* Read past end of buffered data? */
 	if (!file->eof && file->fpos + count > MAX(file->buffer0end, file->buffer1end))
 	{
 		/* Does buffer 0 have stale contents? */
-		if (firstbuffer == 0)
+		if (file->buffer0end <= file->buffer1end)
 		{
 			/* Replace buffer 0's contents with fresh data. */
 			file->buffer0start = file->buffer1end;
@@ -161,25 +156,29 @@ size_t bufferedfile_getbytes(void *buf, size_t count, struct BUFFEREDFILE *file)
 	if (Intersection(&i0, &i1, file->fpos, file->fpos + count, file->buffer0start, file->buffer0end))
 	{
 		/* Copy contents from buffer 0 onto target buf. */
-		const size_t offset = (size_t)(i0 - file->buffer0start + firstbuffer == 0 ? 0 : file->maxlookahead);
-		
 		bytesread = (size_t)(i1 - i0);
 
-		memcpy(buf + offset, file->buffer, bytesread); 
+		if (file->buffer0start <= i0)
+			memcpy(buf, file->buffer + (size_t)(i0 - file->buffer0start), bytesread); 
+		else
+			memcpy(buf + (size_t)(file->buffer0start - i0), file->buffer, bytesread); 
+
+		file->fpos += bytesread;
 	}
 
 	/* Does read operation include data from buffer 1? */
 	if (Intersection(&i0, &i1, file->fpos, file->fpos + count, file->buffer1start, file->buffer1end))
 	{
 		/* Copy contents from buffer 1 onto target buf. */
-		const size_t offset = (size_t)(i0 - file->buffer1start + firstbuffer == 1 ? 0 : file->maxlookahead);
-
 		bytesread = (size_t)(i1 - i0);
 
-		memcpy(buf + offset, file->buffer + file->maxlookahead, bytesread);
-	}
+		if (file->buffer1start <= i0)
+			memcpy(buf, file->buffer + file->maxlookahead + (size_t)(i0 - file->buffer1start), bytesread);
+		else
+			memcpy(buf + (size_t)(file->buffer1start - i0), file->buffer + file->maxlookahead, bytesread);
 
-	file->fpos += bytesread;
+		file->fpos += bytesread;
+	}
 
 	return bytesread;
 }
