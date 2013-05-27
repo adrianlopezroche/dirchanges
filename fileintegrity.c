@@ -123,16 +123,11 @@ size_t bufferedfile_getbytes(void *buf, size_t count, struct BUFFEREDFILE *file)
 	if (count > file->maxlookahead)
 		return 0;
 
-	if (file->buffer0end <= file->buffer1end)
-		firstbuffer = 0;
-	else
-		firstbuffer = 1;
-
 	/* Read past end of buffered data? */
 	if (!file->eof && file->fpos + count > MAX(file->buffer0end, file->buffer1end))
 	{
 		/* Does buffer 0 have stale contents? */
-		if (firstbuffer == 0)
+		if (file->buffer0end <= file->buffer1end)
 		{
 			/* Replace buffer 0's contents with fresh data. */
 			file->buffer0start = file->buffer1end;
@@ -162,25 +157,29 @@ size_t bufferedfile_getbytes(void *buf, size_t count, struct BUFFEREDFILE *file)
 	if (Intersection(&i0, &i1, file->fpos, file->fpos + count, file->buffer0start, file->buffer0end))
 	{
 		/* Copy contents from buffer 0 onto target buf. */
-		const size_t offset = (size_t)(i0 - file->buffer0start + firstbuffer == 0 ? 0 : file->maxlookahead);
-		
 		bytesread = (size_t)(i1 - i0);
 
-		memcpy(buf + offset, file->buffer, bytesread); 
+		if (file->buffer0start <= i0)
+			memcpy(buf, file->buffer + (size_t)(i0 - file->buffer0start), bytesread); 
+		else
+			memcpy(buf + (size_t)(file->buffer0start - i0), file->buffer, bytesread); 
+
+		file->fpos += bytesread;
 	}
 
 	/* Does read operation include data from buffer 1? */
 	if (Intersection(&i0, &i1, file->fpos, file->fpos + count, file->buffer1start, file->buffer1end))
 	{
 		/* Copy contents from buffer 1 onto target buf. */
-		const size_t offset = (size_t)(i0 - file->buffer1start + firstbuffer == 1 ? 0 : file->maxlookahead);
-
 		bytesread = (size_t)(i1 - i0);
 
-		memcpy(buf + offset, file->buffer + file->maxlookahead, bytesread);
-	}
+		if (file->buffer1start <= i0)
+			memcpy(buf, file->buffer + file->maxlookahead + (size_t)(i0 - file->buffer1start), bytesread);
+		else
+			memcpy(buf + (size_t)(file->buffer1start - i0), file->buffer + file->maxlookahead, bytesread);
 
-	file->fpos += bytesread;
+		file->fpos += bytesread;
+	}
 
 	return bytesread;
 }
@@ -202,6 +201,11 @@ struct string string_fromchars(const char *chars)
 	strcpy(s.chars, chars);
 
 	return s;
+}
+
+int string_split(struct string *s, struct string **parts)
+{
+	return 0;
 }
 
 void string_append(struct string *s, char *chars)
@@ -233,9 +237,22 @@ void string_removetrailingcharacter(struct string *s, char c)
 	s->chars[spos + 1] = '\0';
 }
 
+int string_parse_rawhex(struct string *s, uint8_t *buf)
+{
+	return 0;
+}
+
 void string_free(struct string s)
 {
 	free(s.chars);
+}
+
+void string_freemany(struct string *s, int count)
+{
+	int x;
+
+	for (x = 0; x < count; ++x)
+		string_free(s[x]);
 }
 
 char *relativepath(const char *path, const char *root)
@@ -447,7 +464,7 @@ void directoryentry_print(struct directoryentry *de)
 		printf(" ");
 	}
 
-	printf("%s\n", de->name.chars);
+	printf("%s\n", de->fullpath.chars);
 }
 
 int directoryentry_equalbydigest(const struct directoryentry *de1, const struct directoryentry *de2)
@@ -466,6 +483,52 @@ int directoryentry_comparebyfilename(const void *de1, const void *de2)
 	const struct directoryentry *c2 = de2;
 
 	return strcmp(c1->name.chars, c2->name.chars);
+}
+
+int directoryentry_getfromstring(struct string *s, struct directoryentry *entry)
+{
+	int numparts;
+	struct string *parts;
+
+	numparts = string_split(s, &parts);
+	if (numparts >= 2)
+	{
+		if (strcmp(parts[0].chars, "R") == 0)
+		{	
+			if (numparts >= 3)
+			{
+				entry->type = DT_REG;
+				entry->fullpath = parts[2];
+
+				if (!string_parse_rawhex(&parts[1], entry->sha1))
+				{
+					string_freemany(parts, numparts);
+					return 0;
+				}
+			}
+			else
+			{
+				string_freemany(parts, numparts);
+				return 0;
+			}
+		}
+		else if (strcmp(parts[0].chars, "D"))
+		{
+			entry->type = DT_DIR;
+			entry->fullpath = parts[1];
+		}
+		else
+		{
+			string_freemany(parts, numparts);
+			return 0;
+		}
+
+		entry->name = string_fromchars("");
+	}
+
+	string_freemany(parts, numparts);
+
+	return 1;
 }
 
 void directoryentrycollection_sort(struct directoryentrycollection *collection)
@@ -751,8 +814,56 @@ struct directoryentrycollection *directoryentrycollection_getfromarchive(char *p
 	return collection;
 }
 
-struct directoryentrycollection *directoryentrycollection_getfromhashfile(char *path, char *root)
+struct directoryentrycollection *directoryentrycollection_getfromhashfile(struct BUFFEREDFILE *bfile, char *root)
 {
+	struct directoryentry entry;
+
+	uint8_t buf[10];
+	if (bufferedfile_getbytes(buf, 9, bfile) == 9)
+	{
+		buf[9] = '\0';
+		if (strcmp((char*)buf, "DIRHASH1\n") != 0)
+		{
+			bufferedfile_ungetbytes(bfile);
+			return 0;		
+		}
+		else
+		{
+			struct directoryentrycollection *collection = directoryentrycollection_new();
+			if (!collection)
+				exit(1);
+
+			struct string line = string_fromchars("");
+
+			char c[2];
+			c[1] = 0;
+
+			while (bufferedfile_getbytes(c, 1, bfile) == 1)
+			{
+				switch (c[0])
+				{
+					case '\n':
+						if (directoryentry_getfromstring(&line, &entry))
+							directoryentrycollection_add(collection, &entry);
+						else
+							exit(1);
+
+						line.chars[0] = '\0';
+						break;
+
+					default:
+						string_append(&line, c);
+						break;
+				}
+			}
+
+			string_free(line);
+
+			return collection;
+		}
+	}
+
+	bufferedfile_ungetbytes(bfile);
 	return 0;
 }
 
