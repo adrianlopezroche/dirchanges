@@ -115,7 +115,6 @@ int Intersection(uint64_t *i0, uint64_t *i1, uint64_t a0, uint64_t a1, uint64_t 
 
 size_t bufferedfile_getbytes(void *buf, size_t count, struct BUFFEREDFILE *file)
 {
-	int firstbuffer;
 	size_t bytesread;
 	uint64_t i0;
 	uint64_t i1;
