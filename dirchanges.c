@@ -576,7 +576,11 @@ int directoryentry_getfromstring(struct string *s, struct directoryentry *entry,
 					
 					entry->fullpath = string_fetchtoken(s, &offset, "");
 
-					char *rpath = relativepath(entry->fullpath.chars, root);
+					char *rpath = entry->fullpath.chars;
+
+					if (root != 0)
+						rpath = relativepath(entry->fullpath.chars, root);
+
 					if (!rpath)
 					{
 						string_free(entry->fullpath);
@@ -601,7 +605,11 @@ int directoryentry_getfromstring(struct string *s, struct directoryentry *entry,
 			entry->type = DT_DIR;			
 			entry->fullpath = string_fetchtoken(s, &offset, "");
 
-			char *rpath = relativepath(entry->fullpath.chars, root);
+			char *rpath = entry->fullpath.chars;
+
+			if (root != 0)
+				rpath = relativepath(entry->fullpath.chars, root);
+			
 			if (!rpath)
 			{
 				string_free(entry->fullpath);
