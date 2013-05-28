@@ -335,6 +335,7 @@ char *relativepath(const char *path, const char *root)
 
 void directoryentry_destroy(struct directoryentry *directory)
 {
+	string_free(directory->fullpath);
 	string_free(directory->name);
 }
 
