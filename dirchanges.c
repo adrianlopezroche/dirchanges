@@ -261,6 +261,29 @@ int string_parse_rawhex(struct string *s, uint8_t *buf)
 	return 0;
 }
 
+struct string string_fetchtoken(struct string *s, size_t *offset, char *delim)
+{
+	struct string token = string_fromchars("");
+	
+	size_t length = strlen(s->chars);
+	while (*offset < length && strchr(delim, s->chars[*offset]) != 0)
+		++*offset;
+
+	for (; *offset < length; ++*offset)
+	{
+		if (strchr(delim, s->chars[*offset]) != 0)
+			break;
+		
+		char c[2];
+		c[0] = s->chars[*offset];
+		c[1] = '\0';
+
+		string_append(&token, c);
+	}
+
+	return token;
+}
+
 void string_free(struct string s)
 {
 	free(s.chars);
