@@ -549,7 +549,7 @@ int directoryentry_comparebyfilename(const void *de1, const void *de2)
 	return strcmp(c1->name.chars, c2->name.chars);
 }
 
-int directoryentry_getfromstring(struct string *s, struct directoryentry *entry)
+int directoryentry_getfromstring(struct string *s, struct directoryentry *entry, char *root)
 {
 	size_t offset = 0;
 
@@ -565,16 +565,25 @@ int directoryentry_getfromstring(struct string *s, struct directoryentry *entry)
 			struct string signature = string_fetchtoken(s, &offset, " ");
 			if (signature.chars[0] != '\0')
 			{
+				string_free(signature);
+
 				if (string_parse_rawhex(&signature, entry->sha1, SHA1_DIGEST_SIZE) != SHA1_DIGEST_SIZE)
 				{
-					string_free(signature);
 					return 0;
 				}
 				else
-				{
+				{					
 					entry->fullpath = string_fetchtoken(s, &offset, "");
 
-					string_free(signature);
+					char *rpath = relativepath(entry->fullpath.chars, root);
+					if (!rpath)
+					{
+						string_free(entry->fullpath);
+						return 0;
+					}
+
+					entry->name = string_fromchars(rpath);
+
 					return 1;
 				}
 			}
@@ -586,10 +595,19 @@ int directoryentry_getfromstring(struct string *s, struct directoryentry *entry)
 		}
 		else if (strcmp(type.chars, "D") == 0) /* Directory. */
 		{
+			string_free(type);
+
 			entry->type = DT_DIR;			
 			entry->fullpath = string_fetchtoken(s, &offset, "");
 
-			string_free(type);
+			char *rpath = relativepath(entry->fullpath.chars, root);
+			if (!rpath)
+			{
+				string_free(entry->fullpath);
+				return 0;
+			}
+
+			entry->name = string_fromchars(rpath);
 
 			return 1;
 		}
@@ -917,7 +935,7 @@ struct directoryentrycollection *directoryentrycollection_getfromhashfile(struct
 				switch (c[0])
 				{
 					case '\n':
-						if (directoryentry_getfromstring(&line, &entry))
+						if (directoryentry_getfromstring(&line, &entry, root))
 							directoryentrycollection_add(collection, &entry);
 						else
 							exit(1);
