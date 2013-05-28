@@ -272,7 +272,11 @@ struct string string_fetchtoken(struct string *s, size_t *offset, char *delim)
 	for (; *offset < length; ++*offset)
 	{
 		if (strchr(delim, s->chars[*offset]) != 0)
+		{
+			while (*offset < length && strchr(delim, s->chars[*offset]) != 0)
+				++*offset;
 			break;
+		}
 		
 		char c[2];
 		c[0] = s->chars[*offset];
