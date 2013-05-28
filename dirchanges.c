@@ -251,9 +251,31 @@ void string_removetrailingcharacter(struct string *s, char c)
 	s->chars[spos + 1] = '\0';
 }
 
-int string_parse_rawhex(struct string *s, uint8_t *buf)
+size_t string_parse_rawhex(struct string *s, uint8_t *buf, size_t maxbytes)
 {
-	return 0;
+	size_t length = strlen(s->chars);
+	size_t bytes = length / 2;
+
+	if (bytes == 0 || length % 2 != 0 || maxbytes < bytes)
+		return 0;
+
+	size_t x;
+	for (x = 0; x < bytes; ++x)
+	{
+		char bs[3];
+		bs[0] = s->chars[bytes * 2];
+		bs[1] = s->chars[bytes * 2 + 1];
+		bs[2] = '\0';
+
+		unsigned int uib;
+		
+		if (!sscanf(bs, "%x", &uib))
+			return 0;
+
+		buf[x] = (uint8_t) uib;
+	}
+
+	return bytes;
 }
 
 struct string string_fetchtoken(struct string *s, size_t *offset, char *delim)
@@ -542,7 +564,7 @@ int directoryentry_getfromstring(struct string *s, struct directoryentry *entry)
 			struct string signature = string_fetchtoken(s, &offset, " ");
 			if (signature.chars[0] != '\0')
 			{
-				if (!string_parse_rawhex(&signature, entry->sha1))
+				if (string_parse_rawhex(&signature, entry->sha1, SHA1_DIGEST_SIZE) != SHA1_DIGEST_SIZE)
 				{
 					string_free(signature);
 					return 0;
