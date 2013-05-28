@@ -529,48 +529,58 @@ int directoryentry_comparebyfilename(const void *de1, const void *de2)
 
 int directoryentry_getfromstring(struct string *s, struct directoryentry *entry)
 {
-	int numparts;
-	struct string *parts;
+	size_t offset = 0;
 
-	numparts = string_split(s, &parts);
-	if (numparts >= 2)
+	struct string type = string_fetchtoken(s, &offset, " ");
+	if (type.chars[0] != '\0')
 	{
-		if (strcmp(parts[0].chars, "R") == 0)
+		if (strcmp(type.chars, "R") == 0) /* Regular file. */
 		{	
-			if (numparts >= 3)
-			{
-				entry->type = DT_REG;
-				entry->fullpath = parts[2];
+			entry->type = DT_REG;
 
-				if (!string_parse_rawhex(&parts[1], entry->sha1))
+			string_free(type);
+
+			struct string signature = string_fetchtoken(s, &offset, " ");
+			if (signature.chars[0] != '\0')
+			{
+				if (!string_parse_rawhex(&signature, entry->sha1))
 				{
-					string_freemany(parts, numparts);
+					string_free(signature);
 					return 0;
+				}
+				else
+				{
+					entry->fullpath = string_fetchtoken(s, &offset, "");
+
+					string_free(signature);
+					return 1;
 				}
 			}
 			else
 			{
-				string_freemany(parts, numparts);
+				string_free(signature);
 				return 0;
 			}
 		}
-		else if (strcmp(parts[0].chars, "D"))
+		else if (strcmp(type.chars, "D") == 0) /* Directory. */
 		{
-			entry->type = DT_DIR;
-			entry->fullpath = parts[1];
+			entry->type = DT_DIR;			
+			entry->fullpath = string_fetchtoken(s, &offset, "");
+
+			string_free(type);
+
+			return 1;
 		}
-		else
+		else /* Unknown type. */
 		{
-			string_freemany(parts, numparts);
+			string_free(type);
 			return 0;
 		}
-
-		entry->name = string_fromchars("");
 	}
 
-	string_freemany(parts, numparts);
+	string_free(type);
 
-	return 1;
+	return 0;
 }
 
 void directoryentrycollection_sort(struct directoryentrycollection *collection)
