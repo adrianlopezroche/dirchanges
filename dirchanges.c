@@ -263,13 +263,13 @@ size_t string_parse_rawhex(struct string *s, uint8_t *buf, size_t maxbytes)
 	for (x = 0; x < bytes; ++x)
 	{
 		char bs[3];
-		bs[0] = s->chars[bytes * 2];
-		bs[1] = s->chars[bytes * 2 + 1];
+		bs[0] = s->chars[x * 2];
+		bs[1] = s->chars[x * 2 + 1];
 		bs[2] = '\0';
 
 		unsigned int uib;
 		
-		if (!sscanf(bs, "%x", &uib))
+		if (sscanf(bs, "%x", &uib) != 1)
 			return 0;
 
 		buf[x] = (uint8_t) uib;
