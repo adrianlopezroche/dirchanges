@@ -565,14 +565,15 @@ int directoryentry_getfromstring(struct string *s, struct directoryentry *entry,
 			struct string signature = string_fetchtoken(s, &offset, " ");
 			if (signature.chars[0] != '\0')
 			{
-				string_free(signature);
-
 				if (string_parse_rawhex(&signature, entry->sha1, SHA1_DIGEST_SIZE) != SHA1_DIGEST_SIZE)
 				{
+					string_free(signature);
 					return 0;
 				}
 				else
 				{					
+					string_free(signature);
+					
 					entry->fullpath = string_fetchtoken(s, &offset, "");
 
 					char *rpath = relativepath(entry->fullpath.chars, root);
