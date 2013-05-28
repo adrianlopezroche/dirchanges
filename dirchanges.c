@@ -222,11 +222,6 @@ struct string string_fromchars(const char *chars)
 	return s;
 }
 
-int string_split(struct string *s, struct string **parts)
-{
-	return 0;
-}
-
 void string_append(struct string *s, char *chars)
 {
 	size_t needed = strlen(s->chars) + strlen(chars) + 1;
