@@ -84,8 +84,6 @@ struct BUFFEREDFILE
 
 struct libarchivedata
 {
-	FILE *stream;
-	struct string name;
 	struct BUFFEREDFILE *bstream;
 	unsigned char buffer[ARCHIVE_BUFFER_SIZE];	
 };
@@ -497,25 +495,6 @@ char *mgetcwd()
 
 int openarchive(struct archive *a, void *data)
 {
-	struct libarchivedata *ldata = data;
-
-	if (strcmp(ldata->name.chars, "-") != 0)
-	{
-		ldata->stream = fopen(ldata->name.chars, "rb");
-		if (!ldata->stream)
-			return ARCHIVE_FATAL;
-	}
-	else
-	{
-		freopen(NULL, "rb", stdin);
-		ldata->stream = stdin;
-	}
-
-	ldata->bstream = bufferedfile_init(ldata->stream, ARCHIVE_BUFFER_SIZE);
-
-	if (!ldata->bstream)
-		return ARCHIVE_FATAL;
-
 	return ARCHIVE_OK;
 }
 
@@ -531,13 +510,6 @@ ssize_t readarchive(struct archive *a, void *data, const void **buffer)
 
 int closearchive(struct archive *a, void *data)
 {
-	struct libarchivedata *ldata = data;
-
-	if (strcmp(ldata->name.chars, "-") != 0)
-		fclose(ldata->stream);
-
-	bufferedfile_destroy(ldata->bstream);
-
 	return ARCHIVE_OK;
 }
 
@@ -844,7 +816,7 @@ struct directoryentrycollection *directoryentrycollection_getfromfilesystem(char
 	return collection;
 }
 
-struct directoryentrycollection *directoryentrycollection_getfromarchive(char *path, char *root)
+struct directoryentrycollection *directoryentrycollection_getfromarchive(struct BUFFEREDFILE *bfile, char *root)
 {
 	struct directoryentrycollection *collection = directoryentrycollection_new();
 	if (!collection)
@@ -858,7 +830,7 @@ struct directoryentrycollection *directoryentrycollection_getfromarchive(char *p
 	archive_read_support_format_all(a);
 
 	struct libarchivedata ldata;
-	ldata.name = string_fromchars(path);
+	ldata.bstream = bfile;
 
 	archive_read_open(a, &ldata, openarchive, readarchive, closearchive);
 	while (archive_read_next_header(a, &entry) == ARCHIVE_OK)
@@ -948,8 +920,6 @@ struct directoryentrycollection *directoryentrycollection_getfromarchive(char *p
 	archive_read_close(a);
 	archive_read_free(a);
 
-	string_free(ldata.name);
-
 	return collection;
 }
 
@@ -1004,6 +974,37 @@ struct directoryentrycollection *directoryentrycollection_getfromhashfile(struct
 
 	bufferedfile_ungetbytes(bfile);
 	return 0;
+}
+
+struct directoryentrycollection *directoryentrycollection_getfromfile(char *path, char *root)
+{
+	FILE *f;
+	struct BUFFEREDFILE *bfile;
+	struct directoryentrycollection *collection = 0;
+
+	if (strcmp(path, "-") != 0)
+		f = fopen(path, "rb");
+	else
+		f = freopen(NULL, "rb", stdin);
+
+	if (f != 0)
+	{
+		bfile = bufferedfile_init(f, ARCHIVE_BUFFER_SIZE);
+		if (bfile)
+		{
+			collection = directoryentrycollection_getfromhashfile(bfile, root);
+
+			if (!collection)
+				collection = directoryentrycollection_getfromarchive(bfile, root);
+
+			bufferedfile_destroy(bfile);
+		}
+
+		if (strcmp(path, "-") != 0)
+			fclose(f);
+	}
+	
+	return collection;
 }
 
 int main(int argc, char **argv)
@@ -1107,7 +1108,7 @@ int main(int argc, char **argv)
 		if (ISFLAG(flags, F_VERBOSE))
 			fprintf(stderr, "Reading from archive \"%s\"...\n", argv[optind]);
 
-		collection1 = directoryentrycollection_getfromarchive(argv[optind], froot);
+		collection1 = directoryentrycollection_getfromfile(argv[optind], froot);
 	}
 	else if (S_ISDIR(f1stat.st_mode))
 	{
@@ -1124,7 +1125,7 @@ int main(int argc, char **argv)
 			if (ISFLAG(flags, F_VERBOSE))
 				fprintf(stderr, "\nReading from archive \"%s\"...\n", argv[optind+1]);
 
-			collection2 = directoryentrycollection_getfromarchive(argv[optind+1], troot);
+			collection2 = directoryentrycollection_getfromfile(argv[optind+1], troot);
 		}
 		else if (S_ISDIR(f2stat.st_mode))
 		{	
