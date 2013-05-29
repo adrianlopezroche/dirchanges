@@ -33,8 +33,7 @@
 
 #include "sha1/sha1.h"
 
-#define FILENAME_MAX_SIZE 256
-#define ARCHIVE_BUFFER_SIZE 256
+#define ARCHIVE_BUFFER_SIZE 8192
 
 #define ISFLAG(a,b) ((a & b) == b)
 #define SETFLAG(a,b) (a |= b)
