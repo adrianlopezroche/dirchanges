@@ -1007,6 +1007,18 @@ struct directoryentrycollection *directoryentrycollection_getfromfile(char *path
 	return collection;
 }
 
+void help_text()
+{
+	printf("Usage: dirchanges [options] FROM TO\n");
+	printf("       dirchanges [options] --hash FROM\n\n");
+
+	printf(" -f --froot=PATH \tget files from PATH (relative to FROM parameter)\n");	
+	printf(" -t --troot=PATH \tget files from PATH (relative to TO parameter)\n");	
+	printf(" -H --hash       \tprint a list of hashes to standard output\n");	
+	printf(" -v --verbose    \tverbosely list files processed\n");	
+	printf(" -h --help       \tdisplay this help message\n\n");	
+}
+
 int main(int argc, char **argv)
 {	
 	static struct option long_options[] = 
@@ -1014,7 +1026,8 @@ int main(int argc, char **argv)
 		{ "froot", 1, 0, 'f' },
 		{ "troot", 1, 0, 't' },
 		{ "verbose", 0, 0, 'v' },
-		{ "hash", 0, 0, 'h' },
+		{ "hash", 0, 0, 'H' },
+		{ "help", 0, 0, 'h' },
 		{ 0, 0, 0, 0 }
 	};
 
@@ -1027,7 +1040,7 @@ int main(int argc, char **argv)
 	char *froot = 0;
 	char *troot = 0;
 
-	while ((opt = getopt_long(argc, argv, "f:t:h", long_options, 0)) != -1)
+	while ((opt = getopt_long(argc, argv, "f:t:vHh", long_options, 0)) != -1)
 	{
 		switch (opt)
 		{
@@ -1039,7 +1052,7 @@ int main(int argc, char **argv)
 			troot = optarg;
 			break;
 
-		case 'h':
+		case 'H':
 			SETFLAG(flags, F_PRINTHASHES);
 			break;
 
@@ -1047,28 +1060,35 @@ int main(int argc, char **argv)
 			SETFLAG(flags, F_VERBOSE);
 			break;
 
+		case 'h':
+			help_text();
+			exit(0);
+
 		case '?':
 			errors = 1;
 			break;
 		}
 	}
 
-	int nonoptc = argc - optind;
-	if (nonoptc < 1)
+	if (!errors)
 	{
-		fprintf(stderr, "%s: must specify FROM and TO arguments.\n", argv[0]);
-		errors = 1;
-	}
-	else if (nonoptc < 2 && !ISFLAG(flags, F_PRINTHASHES))
-	{
-		fprintf(stderr, "%s: must specify TO argument.\n", argv[0]);
-		errors = 1;
-	}
-	else if ((nonoptc > 1 && ISFLAG(flags, F_PRINTHASHES)) || nonoptc > 2)
-	{
-		fprintf(stderr, "%s: too many arguments supplied.\n", argv[0]);
-		errors = 1;
-	}
+		int nonoptc = argc - optind;
+		if (nonoptc < 1)
+		{
+			fprintf(stderr, "%s: must specify FROM and TO arguments.\n", argv[0]);
+			errors = 1;
+		}
+		else if (nonoptc < 2 && !ISFLAG(flags, F_PRINTHASHES))
+		{
+			fprintf(stderr, "%s: must specify TO argument.\n", argv[0]);
+			errors = 1;
+		}
+		else if ((nonoptc > 1 && ISFLAG(flags, F_PRINTHASHES)) || nonoptc > 2)
+		{
+			fprintf(stderr, "%s: too many arguments supplied.\n", argv[0]);
+			errors = 1;
+		}
+	}	
 
 	if (errors)
 	{
