@@ -73,6 +73,7 @@ struct BUFFEREDFILE
 	uint64_t rollback;
 	uint64_t fpos;
 	int eof;
+	int error;
 
 	void *buffer;
 	uint64_t buffer0start;
@@ -112,6 +113,7 @@ struct BUFFEREDFILE *bufferedfile_init(FILE *stream, size_t maxlookahead)
 	f->fpos = 0;
 	f->rollback = 0;
 	f->eof = 0;
+	f->error = 0;
 
 	return f;
 }
@@ -133,40 +135,54 @@ int Intersection(uint64_t *i0, uint64_t *i1, uint64_t a0, uint64_t a1, uint64_t 
 	return 1;
 }
 
-size_t bufferedfile_getbytes(void *buf, size_t count, struct BUFFEREDFILE *file)
+size_t _bufferedfile_getbytes(void *buf, size_t count, struct BUFFEREDFILE *file, int buffered)
 {
 	size_t bytesread;
 	uint64_t i0;
 	uint64_t i1;
 
-	if (count > file->maxlookahead)
-		return 0;
+	/* Allow rollback to previous position. */
+	file->rollback = file->fpos;
 
-	/* Read past end of buffered data? */
-	if (!file->eof && file->fpos + count > MAX(file->buffer0end, file->buffer1end))
+	/* Refresh buffer if necessary. */
+	if (buffered)
 	{
-		/* Does buffer 0 have stale contents? */
-		if (file->buffer0end <= file->buffer1end)
+		/* Reading more than maxlookahead bytes is not permitted on buffered reads. */
+		if (count > file->maxlookahead)
+			return 0;
+
+		/* Read past end of buffered data? */
+		if (!file->eof && file->fpos + count > MAX(file->buffer0end, file->buffer1end))
 		{
-			/* Replace buffer 0's contents with fresh data. */
-			file->buffer0start = file->buffer1end;
+			/* Does buffer 0 have stale contents? */
+			if (file->buffer0end <= file->buffer1end)
+			{
+				/* Replace buffer 0's contents with fresh data. */
+				file->buffer0start = file->buffer1end;
 
-			size_t read = fread(file->buffer, 1, file->maxlookahead, file->stream);
-			if (read != count)
-				file->eof = 1;
+				size_t read = fread(file->buffer, 1, file->maxlookahead, file->stream);
+				if (read != count)
+				{
+					file->eof = feof(file->stream);
+					file->error = ferror(file->stream);
+				}
 
-			file->buffer0end = file->buffer0start + read;
-		}
-		else
-		{
-			/* Replace buffer 1's contents with fresh data. */
-			file->buffer1start = file->buffer0end;
+				file->buffer0end = file->buffer0start + read;
+			}
+			else
+			{
+				/* Replace buffer 1's contents with fresh data. */
+				file->buffer1start = file->buffer0end;
 
-			size_t read = fread(file->buffer + file->maxlookahead, 1, file->maxlookahead, file->stream);
-			if (read != count)
-				file->eof = 1;
+				size_t read = fread(file->buffer + file->maxlookahead, 1, file->maxlookahead, file->stream);
+				if (read != count)
+				{
+					file->eof = feof(file->stream);
+					file->error = ferror(file->stream);
+				}
 
-			file->buffer1end = file->buffer1start + read;
+				file->buffer1end = file->buffer1start + read;
+			}
 		}
 	}
 
@@ -176,31 +192,53 @@ size_t bufferedfile_getbytes(void *buf, size_t count, struct BUFFEREDFILE *file)
 	if (Intersection(&i0, &i1, file->fpos, file->fpos + count, file->buffer0start, file->buffer0end))
 	{
 		/* Copy contents from buffer 0 onto target buf. */
-		bytesread = (size_t)(i1 - i0);
-
 		if (file->buffer0start <= i0)
-			memcpy(buf, file->buffer + (size_t)(i0 - file->buffer0start), bytesread); 
+			memcpy(buf, file->buffer + (size_t)(i0 - file->buffer0start), (size_t)(i1 - i0)); 
 		else
-			memcpy(buf + (size_t)(file->buffer0start - i0), file->buffer, bytesread); 
+			memcpy(buf + (size_t)(file->buffer0start - i0), file->buffer, (size_t)(i1 - i0)); 
 
-		file->fpos += bytesread;
+		bytesread += (size_t)(i1 - i0);
 	}
 
 	/* Does read operation include data from buffer 1? */
 	if (Intersection(&i0, &i1, file->fpos, file->fpos + count, file->buffer1start, file->buffer1end))
 	{
 		/* Copy contents from buffer 1 onto target buf. */
-		bytesread = (size_t)(i1 - i0);
-
 		if (file->buffer1start <= i0)
-			memcpy(buf, file->buffer + file->maxlookahead + (size_t)(i0 - file->buffer1start), bytesread);
+			memcpy(buf, file->buffer + file->maxlookahead + (size_t)(i0 - file->buffer1start), (size_t)(i1 - i0));
 		else
-			memcpy(buf + (size_t)(file->buffer1start - i0), file->buffer + file->maxlookahead, bytesread);
+			memcpy(buf + (size_t)(file->buffer1start - i0), file->buffer + file->maxlookahead, (size_t)(i1 - i0));
 
-		file->fpos += bytesread;
+		bytesread += (size_t)(i1 - i0);
 	}
 
+	/* Is there any data left to read? */
+	if (!file->eof && bytesread < count)
+	{
+		/* Read unbuffered data directly from stream. */
+		size_t read = fread(buf + bytesread, 1, count - bytesread, file->stream);
+		if (read != count - bytesread)
+			file->eof = 1;
+
+		bytesread += read;
+
+		/* Can't roll back unbuffered reads. */
+		file->rollback = file->fpos + bytesread;
+	}
+	
+	file->fpos += bytesread;
+
 	return bytesread;
+}
+
+size_t bufferedfile_getbytes(void *buf, size_t count, struct BUFFEREDFILE *file)
+{
+	return _bufferedfile_getbytes(buf, count, file, 1);
+}
+
+size_t bufferedfile_getbytes_unbuffered(void *buf, size_t count, struct BUFFEREDFILE *file)
+{
+	return _bufferedfile_getbytes(buf, count, file, 0);
 }
 
 void bufferedfile_ungetbytes(struct BUFFEREDFILE *file)
