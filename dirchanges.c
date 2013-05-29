@@ -29,6 +29,7 @@
 #include <unistd.h>
 #include <getopt.h>
 #include <errno.h>
+#include <libgen.h>
 
 #include "sha1/sha1.h"
 
@@ -1092,7 +1093,7 @@ int main(int argc, char **argv)
 
 	if (errors)
 	{
-		fprintf(stderr, "Try '%s --help' for more information.\n", argv[0]);
+		fprintf(stderr, "Try '%s --help' for more information.\n", basename(argv[0]));
 		return 0;
 	}
 
