@@ -445,11 +445,11 @@ int getfiledigest(char *path, uint8_t *digest)
 	
 	uint8_t buf[ARCHIVE_BUFFER_SIZE];
 
-	size_t read = bufferedfile_getbytes(buf, ARCHIVE_BUFFER_SIZE, bf);
+	size_t read = bufferedfile_getbytes_unbuffered(buf, ARCHIVE_BUFFER_SIZE, bf);
 	while (read > 0)
 	{
 		SHA1_Update(&sha1ctx, buf, read);
-		read = bufferedfile_getbytes(buf, ARCHIVE_BUFFER_SIZE, bf);
+		read = bufferedfile_getbytes_unbuffered(buf, ARCHIVE_BUFFER_SIZE, bf);
 	}
 
 	SHA1_Final(&sha1ctx, digest);
@@ -523,7 +523,7 @@ ssize_t readarchive(struct archive *a, void *data, const void **buffer)
 {
 	struct libarchivedata *ldata = data;
 
-	size_t read = bufferedfile_getbytes(ldata->buffer, ARCHIVE_BUFFER_SIZE, ldata->bstream);
+	size_t read = bufferedfile_getbytes_unbuffered(ldata->buffer, ARCHIVE_BUFFER_SIZE, ldata->bstream);
 	*buffer = ldata->buffer;
 
 	return read;
