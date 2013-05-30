@@ -700,13 +700,13 @@ void directoryentrycollection_compare(struct directoryentrycollection *c1, struc
 				if (!directoryentry_equalbydigest(&c1->entries[c1pos], &c2->entries[c2pos]))
 				{
 					differencesfound = 1;				
-					printf("Different between %s and %s: %s\n", pathfrom, pathto, c2->entries[c2pos].fullpath.chars);
+					printf("Modified %s in %s\n", c2->entries[c2pos].fullpath.chars, pathto);
 				}
 			}
 			else if (c1->entries[c1pos].type != c2->entries[c2pos].type)
 			{
 				differencesfound = 1;
-				printf("Different between %s and %s: %s\n", pathfrom, pathto, c2->entries[c2pos].fullpath.chars);
+				printf("Modified %s in %s\n", c2->entries[c2pos].fullpath.chars, pathto);
 			}
 
 			c1pos++;
@@ -715,13 +715,13 @@ void directoryentrycollection_compare(struct directoryentrycollection *c1, struc
 		else if (cmp < 0)
 		{
 			differencesfound = 1;
-			printf("Only in %s: %s\n", pathfrom, c1->entries[c1pos].fullpath.chars);
+			printf(" Removed %s from %s\n", c1->entries[c1pos].fullpath.chars, pathfrom);
 			c1pos++;
 		}
 		else
 		{
 			differencesfound = 1;
-			printf("Only in %s: %s\n", pathto, c2->entries[c2pos].fullpath.chars);
+			printf("   Added %s to %s\n", c2->entries[c2pos].fullpath.chars, pathto);
 			c2pos++;
 		}
 	}
@@ -731,10 +731,10 @@ void directoryentrycollection_compare(struct directoryentrycollection *c1, struc
 		differencesfound = 1;
 
 		while (c1pos < c1->length)
-			printf("Only in %s: %s\n", pathfrom, c1->entries[c1pos++].fullpath.chars);
+			printf(" Removed %s:%s\n", pathfrom, c1->entries[c1pos++].fullpath.chars);
 	
 		while (c2pos < c2->length)
-			printf("Only in %s: %s\n", pathto, c2->entries[c2pos++].fullpath.chars);
+			printf("   Added %s:%s\n", pathto, c2->entries[c2pos++].fullpath.chars);
 	}
 
 	if (!differencesfound)
