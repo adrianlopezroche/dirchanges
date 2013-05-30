@@ -700,13 +700,13 @@ void directoryentrycollection_compare(struct directoryentrycollection *c1, struc
 				if (!directoryentry_equalbydigest(&c1->entries[c1pos], &c2->entries[c2pos]))
 				{
 					differencesfound = 1;				
-					printf("Different in %s: %s\n", pathto, c2->entries[c2pos].fullpath.chars);
+					printf("Different between %s and %s: %s\n", pathfrom, pathto, c2->entries[c2pos].fullpath.chars);
 				}
 			}
 			else if (c1->entries[c1pos].type != c2->entries[c2pos].type)
 			{
 				differencesfound = 1;
-				printf("Different in %s: %s\n", pathto, c2->entries[c2pos].fullpath.chars);
+				printf("Different between %s and %s: %s\n", pathfrom, pathto, c2->entries[c2pos].fullpath.chars);
 			}
 
 			c1pos++;
