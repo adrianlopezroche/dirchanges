@@ -21,6 +21,7 @@
 #include <archive.h>
 #include <archive_entry.h>
 #include <stdio.h>
+#include <stdarg.h>
 #include <malloc.h>
 #include <dirent.h>
 #include <string.h>
@@ -42,6 +43,8 @@
 
 #define F_PRINTHASHES 0x0001
 #define F_VERBOSE 0x0002
+
+char *program_name;
 
 unsigned long flags = 0;
 
@@ -88,17 +91,46 @@ struct libarchivedata
 	unsigned char buffer[ARCHIVE_BUFFER_SIZE];	
 };
 
+void fatalerror(char *message, ...)
+{
+
+	va_list ap;
+
+	va_start(ap, message);
+
+	fprintf(stderr, "%s: ", program_name);
+	
+	vfprintf(stderr, message, ap);
+	
+	fprintf(stderr, "\n");
+
+	exit(1);
+}
+
+void warn(char *message, ...)
+{
+	va_list ap;
+
+	va_start(ap, message);
+
+	fprintf(stderr, "%s: ", program_name);
+	
+	vfprintf(stderr, message, ap);
+	
+	fprintf(stderr, "\n");
+}
+
 struct BUFFEREDFILE *bufferedfile_init(FILE *stream, size_t maxlookahead)
 {
 	struct BUFFEREDFILE *f = malloc(sizeof(struct BUFFEREDFILE));
 	if (!f) 
-		exit(1);
+		fatalerror("out of memory!");
 
 	f->buffer = malloc(maxlookahead * 2);
 	if (!f->buffer)
 	{
 		free(f);
-		exit(1);
+		fatalerror("out of memory!");
 	}
 
 	f->buffer0start = 0;
@@ -251,7 +283,7 @@ struct string string_fromchars(const char *chars)
 	s.chars = malloc(s.allocated);
 
 	if (s.chars == 0)
-		exit(1);
+		fatalerror("out of memory!");
 
 	strcpy(s.chars, chars);
 
@@ -269,7 +301,7 @@ void string_append(struct string *s, char *chars)
 		char *newchars = realloc(s->chars, s->allocated);
 		
 		if (newchars == 0)
-			exit(1);
+			fatalerror("out of memory!");
 
 		s->chars = newchars;
 	}
@@ -379,13 +411,13 @@ struct directoryentrycollection *directoryentrycollection_new()
 {
 	struct directoryentrycollection *collection = malloc(sizeof(struct directoryentrycollection));
 	if (collection == 0)
-		exit(1);
+		fatalerror("out of memory!");
 
 	collection->entries = malloc(sizeof(struct directoryentry));
 	if (collection->entries == 0)
 	{
 		free(collection);
-		exit(1);
+		fatalerror("out of memory!");
 	}
 
 	collection->allocated = 1;
@@ -400,7 +432,7 @@ struct directoryentry *directoryentrycollection_add(struct directoryentrycollect
 	{
 		struct directoryentry *newdata = realloc(to->entries, sizeof(struct directoryentry) * to->allocated * 2);
 		if (newdata == 0)
-			exit(1);
+			fatalerror("out of memory!");
 
 		to->allocated *= 2;
 		to->entries = newdata;
@@ -466,7 +498,7 @@ char *mgetcwd()
 
 	buf = malloc(bufsize);
 	if (!buf)
-		exit(1);
+		fatalerror("out of memory!");
 
 	while (getcwd(buf, bufsize) == 0)
 	{
@@ -478,7 +510,7 @@ char *mgetcwd()
 			if (!newbuf)
 			{
 				free(buf);
-				exit(1);
+				fatalerror("out of memory!");
 			}
 			
 			buf = newbuf;
@@ -728,7 +760,10 @@ void directoryentry_addfromfilesystem(struct directoryentrycollection *collectio
 		cd = opendir(".");
 
 	if (cd == 0)
-		exit(1);
+	{
+		warn("could not open %s", path);
+		return;
+	}
 
 	struct dirent *dirinfo;
 	while ((dirinfo = readdir(cd)) != 0)
@@ -786,7 +821,7 @@ void directoryentry_addfromfilesystem(struct directoryentrycollection *collectio
 			}
 			else
 			{
-				fprintf(stderr, "error obtaining hash for %s\n", s.chars);
+				warn("error obtaining hash for %s", s.chars);
 			}
 		}
 
@@ -799,19 +834,19 @@ struct directoryentrycollection *directoryentrycollection_getfromfilesystem(char
 {
 	struct directoryentrycollection *collection = directoryentrycollection_new();
 	if (!collection)
-		exit(1);
+		fatalerror("out of memory!");
 
 	char *cwd = mgetcwd();
 	if (cwd == 0)
-		exit(1);
+		fatalerror("could not determine current working directory!");
 
 	if (chdir(path) != 0)
-		exit(1);
+		fatalerror("could not chdir to %s!", path);
 
 	directoryentry_addfromfilesystem(collection, 0, root);
 
 	if (chdir(cwd) != 0)
-		exit (1);
+		fatalerror("could not chdir to %s!", path);
 
 	return collection;
 }
@@ -819,8 +854,6 @@ struct directoryentrycollection *directoryentrycollection_getfromfilesystem(char
 struct directoryentrycollection *directoryentrycollection_getfromarchive(struct BUFFEREDFILE *bfile, char *root)
 {
 	struct directoryentrycollection *collection = directoryentrycollection_new();
-	if (!collection)
-		exit(1);
 
 	struct archive *a;
 	struct archive_entry *entry;
@@ -939,9 +972,8 @@ struct directoryentrycollection *directoryentrycollection_getfromhashfile(struct
 		else
 		{
 			struct directoryentrycollection *collection = directoryentrycollection_new();
-			if (!collection)
-				exit(1);
 
+			size_t lineno = 1;
 			struct string line = string_fromchars("");
 
 			char c[2];
@@ -955,8 +987,9 @@ struct directoryentrycollection *directoryentrycollection_getfromhashfile(struct
 						if (directoryentry_getfromstring(&line, &entry, root))
 							directoryentrycollection_add(collection, &entry);
 						else
-							exit(1);
+							fatalerror("hashfile contains errors in line %d:\n\"%s\"", lineno, line.chars);
 
+						++lineno;
 						line.chars[0] = '\0';
 						break;
 
@@ -1031,6 +1064,8 @@ int main(int argc, char **argv)
 		{ 0, 0, 0, 0 }
 	};
 
+	program_name = argv[0];
+
 	extern char *optarg;
 	extern int optind;
 	
@@ -1075,17 +1110,17 @@ int main(int argc, char **argv)
 		int nonoptc = argc - optind;
 		if (nonoptc < 1)
 		{
-			fprintf(stderr, "%s: must specify FROM and TO arguments.\n", argv[0]);
+			warn("must specify FROM and TO arguments");
 			errors = 1;
 		}
 		else if (nonoptc < 2 && !ISFLAG(flags, F_PRINTHASHES))
 		{
-			fprintf(stderr, "%s: must specify TO argument.\n", argv[0]);
+			warn("must specify TO argument");
 			errors = 1;
 		}
 		else if ((nonoptc > 1 && ISFLAG(flags, F_PRINTHASHES)) || nonoptc > 2)
 		{
-			fprintf(stderr, "%s: too many arguments supplied.\n", argv[0]);
+			warn("too many arguments supplied");
 			errors = 1;
 		}
 	}	
@@ -1103,24 +1138,15 @@ int main(int argc, char **argv)
 	struct stat f2stat;
 
 	if (strcmp(argv[optind], "-") != 0 && lstat(argv[optind], &f1stat) != 0)
-	{
-		fprintf(stderr, "%s: cannot access %s.\n", argv[0], argv[optind]);
-		return 0;
-	}
+		fatalerror("cannot access %s", argv[optind]);
 
 	if (!ISFLAG(flags, F_PRINTHASHES))
 	{
 	 	if (strcmp(argv[optind+1], "-") != 0 && lstat(argv[optind+1], &f2stat) != 0)
-		{
-			fprintf(stderr, "%s: cannot access %s.\n", argv[0], argv[optind+1]); 
-			return 0;
-		}
+			fatalerror("cannot access %s", argv[optind+1]); 
 
 		if (strcmp(argv[optind], "-") == 0 && strcmp(argv[optind+1], "-") == 0)
-		{
-			fprintf(stderr, "%s: can't read twice from stdin.\n", argv[0]);
-			return 0;
-		}
+			fatalerror("can't read twice from stdin");
 	}
 
 	if (strcmp(argv[optind], "-") == 0 || S_ISREG(f1stat.st_mode))
