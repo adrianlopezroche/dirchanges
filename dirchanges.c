@@ -795,21 +795,24 @@ void directoryentry_addfromfilesystem(struct directoryentrycollection *collectio
 		{
 			if (rpath != 0)
 			{
+				if (ISFLAG(flags, F_VERBOSE))		
+					fprintf(stderr, "%s\n", s.chars);	
+
 				struct directoryentry entry;
 				entry.name = string_fromchars(rpath);
 				entry.fullpath = string_fromchars(s.chars);
 				entry.type = dirinfo->d_type;
 
 				directoryentrycollection_add(collection, &entry);
-
-				if (ISFLAG(flags, F_VERBOSE))		
-					fprintf(stderr, "%s\n", s.chars);	
 			}
 
 			directoryentry_addfromfilesystem(collection, s.chars, root);
 		}
 		else if (rpath != 0)
 		{
+			if (ISFLAG(flags, F_VERBOSE))
+				fprintf(stderr, "%s\n", s.chars);	
+
 			struct directoryentry entry;
 			entry.name = string_fromchars(rpath);	
 			entry.fullpath = string_fromchars(s.chars);
@@ -818,9 +821,6 @@ void directoryentry_addfromfilesystem(struct directoryentrycollection *collectio
 			if (getfiledigest(s.chars, entry.sha1))
 			{
 				directoryentrycollection_add(collection, &entry);
-
-				if (ISFLAG(flags, F_VERBOSE))
-					fprintf(stderr, "%s\n", s.chars);	
 			}
 			else
 			{
@@ -854,8 +854,11 @@ struct directoryentrycollection *directoryentrycollection_getfromfilesystem(char
 	return collection;
 }
 
-struct directoryentrycollection *directoryentrycollection_getfromarchive(struct BUFFEREDFILE *bfile, char *root)
+struct directoryentrycollection *directoryentrycollection_getfromarchive(struct BUFFEREDFILE *bfile, char *path, char *root)
 {
+	if (ISFLAG(flags, F_VERBOSE))
+		fprintf(stderr, "Reading from archive \"%s\"...\n", path);
+
 	struct directoryentrycollection *collection = directoryentrycollection_new();
 
 	struct archive *a;
@@ -883,6 +886,9 @@ struct directoryentrycollection *directoryentrycollection_getfromarchive(struct 
 
 			if (rpath != 0)
 			{
+				if (ISFLAG(flags, F_VERBOSE))
+					fprintf(stderr, "%s\n", s.chars);	
+
 				SHA1_CTX sha1ctx;		
 				SHA1_Init(&sha1ctx);
 
@@ -902,10 +908,7 @@ struct directoryentrycollection *directoryentrycollection_getfromarchive(struct 
 
 				SHA1_Final(&sha1ctx, direntry.sha1);
 		
-				directoryentrycollection_add(collection, &direntry);
-		
-				if (ISFLAG(flags, F_VERBOSE))
-					fprintf(stderr, "%s\n", s.chars);	
+				directoryentrycollection_add(collection, &direntry);		
 			}
 			else
 			{
@@ -925,15 +928,15 @@ struct directoryentrycollection *directoryentrycollection_getfromarchive(struct 
 
 			if (rpath != 0)
 			{
+				if (ISFLAG(flags, F_VERBOSE))
+					fprintf(stderr, "%s\n", s.chars);	
+
 				struct directoryentry direntry;
 				direntry.name = string_fromchars(rpath);
 				direntry.fullpath = string_fromchars(s.chars);
 				direntry.type = DT_DIR;
 
-				directoryentrycollection_add(collection, &direntry);
-		
-				if (ISFLAG(flags, F_VERBOSE))
-					fprintf(stderr, "%s\n", s.chars);	
+				directoryentrycollection_add(collection, &direntry);		
 			}
 			else
 			{
@@ -959,7 +962,7 @@ struct directoryentrycollection *directoryentrycollection_getfromarchive(struct 
 	return collection;
 }
 
-struct directoryentrycollection *directoryentrycollection_getfromhashfile(struct BUFFEREDFILE *bfile, char *root)
+struct directoryentrycollection *directoryentrycollection_getfromhashfile(struct BUFFEREDFILE *bfile, char *path, char *root)
 {
 	struct directoryentry entry;
 
@@ -974,6 +977,9 @@ struct directoryentrycollection *directoryentrycollection_getfromhashfile(struct
 		}
 		else
 		{
+			if (ISFLAG(flags, F_VERBOSE))
+				fprintf(stderr, "Reading from hash file \"%s\"...\n", path);
+
 			struct directoryentrycollection *collection = directoryentrycollection_new();
 
 			size_t lineno = 1;
@@ -988,9 +994,16 @@ struct directoryentrycollection *directoryentrycollection_getfromhashfile(struct
 				{
 					case '\n':
 						if (directoryentry_getfromstring(&line, &entry, root))
+						{
+							if (ISFLAG(flags, F_VERBOSE))
+								fprintf(stderr, "%s\n", entry.fullpath.chars);	
+
 							directoryentrycollection_add(collection, &entry);
+						}
 						else
+						{
 							fatalerror("hashfile contains errors in line %d:\n\"%s\"", lineno, line.chars);
+						}
 
 						++lineno;
 						line.chars[0] = '\0';
@@ -1028,10 +1041,10 @@ struct directoryentrycollection *directoryentrycollection_getfromfile(char *path
 		bfile = bufferedfile_init(f, ARCHIVE_BUFFER_SIZE);
 		if (bfile)
 		{
-			collection = directoryentrycollection_getfromhashfile(bfile, root);
+			collection = directoryentrycollection_getfromhashfile(bfile, path, root);
 
 			if (!collection)
-				collection = directoryentrycollection_getfromarchive(bfile, root);
+				collection = directoryentrycollection_getfromarchive(bfile, path, root);
 
 			bufferedfile_destroy(bfile);
 		}
@@ -1154,9 +1167,6 @@ int main(int argc, char **argv)
 
 	if (strcmp(argv[optind], "-") == 0 || S_ISREG(f1stat.st_mode))
 	{
-		if (ISFLAG(flags, F_VERBOSE))
-			fprintf(stderr, "Reading from archive \"%s\"...\n", argv[optind]);
-
 		collection1 = directoryentrycollection_getfromfile(argv[optind], froot);
 	}
 	else if (S_ISDIR(f1stat.st_mode))
@@ -1171,9 +1181,6 @@ int main(int argc, char **argv)
 	{
 		if (strcmp(argv[optind+1], "-") == 0 || S_ISREG(f2stat.st_mode))
 		{
-			if (ISFLAG(flags, F_VERBOSE))
-				fprintf(stderr, "\nReading from archive \"%s\"...\n", argv[optind+1]);
-
 			collection2 = directoryentrycollection_getfromfile(argv[optind+1], troot);
 		}
 		else if (S_ISDIR(f2stat.st_mode))
