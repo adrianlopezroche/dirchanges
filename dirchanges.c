@@ -10,7 +10,7 @@
 
    1. The origin of this software must not be misrepresented; you must not
       claim that you wrote the original software. If you use this software in a
-      product, an acknowledgment in the product documentation would be 
+      product, an acknowledgment in the product documentation would be
       appreciated but is not required.
 
    2. Altered source versions must be plainly marked as such, and must not be
@@ -88,7 +88,7 @@ struct BUFFEREDFILE
 struct libarchivedata
 {
 	struct BUFFEREDFILE *bstream;
-	unsigned char buffer[ARCHIVE_BUFFER_SIZE];	
+	unsigned char buffer[ARCHIVE_BUFFER_SIZE];
 };
 
 void fatalerror(char *message, ...)
@@ -99,9 +99,9 @@ void fatalerror(char *message, ...)
 	va_start(ap, message);
 
 	fprintf(stderr, "%s: ", program_name);
-	
+
 	vfprintf(stderr, message, ap);
-	
+
 	fprintf(stderr, "\n");
 
 	exit(1);
@@ -114,16 +114,16 @@ void warn(char *message, ...)
 	va_start(ap, message);
 
 	fprintf(stderr, "%s: ", program_name);
-	
+
 	vfprintf(stderr, message, ap);
-	
+
 	fprintf(stderr, "\n");
 }
 
 struct BUFFEREDFILE *bufferedfile_init(FILE *stream, size_t maxlookahead)
 {
 	struct BUFFEREDFILE *f = malloc(sizeof(struct BUFFEREDFILE));
-	if (!f) 
+	if (!f)
 		fatalerror("out of memory!");
 
 	f->buffer = malloc(maxlookahead * 2);
@@ -223,9 +223,9 @@ size_t _bufferedfile_getbytes(void *buf, size_t count, struct BUFFEREDFILE *file
 	{
 		/* Copy contents from buffer 0 onto target buf. */
 		if (file->buffer0start <= i0)
-			memcpy(buf, file->buffer + (size_t)(i0 - file->buffer0start), (size_t)(i1 - i0)); 
+			memcpy(buf, file->buffer + (size_t)(i0 - file->buffer0start), (size_t)(i1 - i0));
 		else
-			memcpy(buf + (size_t)(file->buffer0start - i0), file->buffer, (size_t)(i1 - i0)); 
+			memcpy(buf + (size_t)(file->buffer0start - i0), file->buffer, (size_t)(i1 - i0));
 
 		bytesread += (size_t)(i1 - i0);
 	}
@@ -255,7 +255,7 @@ size_t _bufferedfile_getbytes(void *buf, size_t count, struct BUFFEREDFILE *file
 		/* Can't roll back unbuffered reads. */
 		file->rollback = file->fpos + bytesread;
 	}
-	
+
 	file->fpos += bytesread;
 
 	return bytesread;
@@ -297,9 +297,9 @@ void string_append(struct string *s, char *chars)
 	if (needed > s->allocated)
 	{
 		s->allocated = needed * 2;
-		
+
 		char *newchars = realloc(s->chars, s->allocated);
-		
+
 		if (newchars == 0)
 			fatalerror("out of memory!");
 
@@ -315,7 +315,7 @@ void string_removetrailingcharacter(struct string *s, char c)
 
 	while (spos >= 0 && s->chars[spos] == c)
 		--spos;
-		
+
 	s->chars[spos + 1] = '\0';
 }
 
@@ -336,7 +336,7 @@ size_t string_parse_rawhex(struct string *s, uint8_t *buf, size_t maxbytes)
 		bs[2] = '\0';
 
 		unsigned int uib;
-		
+
 		if (sscanf(bs, "%x", &uib) != 1)
 			return 0;
 
@@ -349,7 +349,7 @@ size_t string_parse_rawhex(struct string *s, uint8_t *buf, size_t maxbytes)
 struct string string_fetchtoken(struct string *s, size_t *offset, char *delim)
 {
 	struct string token = string_fromchars("");
-	
+
 	size_t length = strlen(s->chars);
 	while (*offset < length && strchr(delim, s->chars[*offset]) != 0)
 		++*offset;
@@ -362,7 +362,7 @@ struct string string_fetchtoken(struct string *s, size_t *offset, char *delim)
 				++*offset;
 			break;
 		}
-		
+
 		char c[2];
 		c[0] = s->chars[*offset];
 		c[1] = '\0';
@@ -397,7 +397,7 @@ char *relativepath(const char *path, const char *root)
 		return NULL;
 
 	newpath = newpath + strlen(root);
-	
+
 	if (*newpath == '/')
 		return newpath + 1;
 	else
@@ -439,15 +439,15 @@ struct directoryentry *directoryentrycollection_add(struct directoryentrycollect
 
 		to->allocated *= 2;
 		to->entries = newdata;
-	} 
+	}
 
 	to->entries[to->length] = *what;
-	
+
 	return &to->entries[to->length++];
 }
 
 void directoryentrycollection_free(struct directoryentrycollection *collection)
-{	
+{
 	if (collection == 0)
 		return;
 
@@ -475,7 +475,7 @@ int getfiledigest(char *path, uint8_t *digest)
 		fclose(stream);
 		return 0;
 	}
-	
+
 	uint8_t buf[ARCHIVE_BUFFER_SIZE];
 
 	size_t read = bufferedfile_getbytes_unbuffered(buf, ARCHIVE_BUFFER_SIZE, bf);
@@ -508,14 +508,14 @@ char *mgetcwd()
 		if (errno == ERANGE)
 		{
 			bufsize *= 2;
-			
+
 			char *newbuf = realloc(buf, bufsize);
 			if (!newbuf)
 			{
 				free(buf);
 				fatalerror("out of memory!");
 			}
-			
+
 			buf = newbuf;
 		}
 		else
@@ -568,7 +568,7 @@ void directoryentry_print(struct directoryentry *de)
 	if (de->type == DT_REG)
 	{
 		for (x = 0; x < SHA1_DIGEST_SIZE; ++x)
-			printf("%02x", de->sha1[x]);		
+			printf("%02x", de->sha1[x]);
 
 		printf(" ");
 	}
@@ -602,7 +602,7 @@ int directoryentry_getfromstring(struct string *s, struct directoryentry *entry,
 	if (type.chars[0] != '\0')
 	{
 		if (strcmp(type.chars, "R") == 0) /* Regular file. */
-		{	
+		{
 			entry->type = DT_REG;
 
 			string_free(type);
@@ -616,9 +616,9 @@ int directoryentry_getfromstring(struct string *s, struct directoryentry *entry,
 					return 0;
 				}
 				else
-				{					
+				{
 					string_free(signature);
-					
+
 					entry->fullpath = string_fetchtoken(s, &offset, "");
 
 					char *rpath = entry->fullpath.chars;
@@ -647,14 +647,14 @@ int directoryentry_getfromstring(struct string *s, struct directoryentry *entry,
 		{
 			string_free(type);
 
-			entry->type = DT_DIR;			
+			entry->type = DT_DIR;
 			entry->fullpath = string_fetchtoken(s, &offset, "");
 
 			char *rpath = entry->fullpath.chars;
 
 			if (root != 0)
 				rpath = relativepath(entry->fullpath.chars, root);
-			
+
 			if (!rpath)
 			{
 				string_free(entry->fullpath);
@@ -702,7 +702,7 @@ void directoryentrycollection_compare(struct directoryentrycollection *c1, struc
 			{
 				if (!directoryentry_equalbydigest(&c1->entries[c1pos], &c2->entries[c2pos]))
 				{
-					differencesfound = 1;				
+					differencesfound = 1;
 					printf("Modified %s\n", relativepath(c2->entries[c2pos].fullpath.chars, troot));
 				}
 			}
@@ -735,7 +735,7 @@ void directoryentrycollection_compare(struct directoryentrycollection *c1, struc
 
 		while (c1pos < c1->length)
 			printf(" Removed %s\n", relativepath(c1->entries[c1pos++].fullpath.chars, froot));
-	
+
 		while (c2pos < c2->length)
 			printf("   Added %s\n", relativepath(c2->entries[c2pos++].fullpath.chars, troot));
 	}
@@ -778,7 +778,7 @@ void directoryentry_addfromfilesystem(struct directoryentrycollection *collectio
 			continue;
 
 		struct string s = string_fromchars("");
-	
+
 		if (path != 0 && strcmp(path, ".") != 0)
 		{
 			string_append(&s, path);
@@ -795,8 +795,8 @@ void directoryentry_addfromfilesystem(struct directoryentrycollection *collectio
 		{
 			if (rpath != 0)
 			{
-				if (ISFLAG(flags, F_VERBOSE))		
-					fprintf(stderr, "%s\n", s.chars);	
+				if (ISFLAG(flags, F_VERBOSE))
+					fprintf(stderr, "%s\n", s.chars);
 
 				struct directoryentry entry;
 				entry.name = string_fromchars(rpath);
@@ -811,10 +811,10 @@ void directoryentry_addfromfilesystem(struct directoryentrycollection *collectio
 		else if (rpath != 0)
 		{
 			if (ISFLAG(flags, F_VERBOSE))
-				fprintf(stderr, "%s\n", s.chars);	
+				fprintf(stderr, "%s\n", s.chars);
 
 			struct directoryentry entry;
-			entry.name = string_fromchars(rpath);	
+			entry.name = string_fromchars(rpath);
 			entry.fullpath = string_fromchars(s.chars);
 			entry.type = dirinfo->d_type;
 
@@ -863,7 +863,7 @@ struct directoryentrycollection *directoryentrycollection_getfromarchive(struct 
 
 	struct archive *a;
 	struct archive_entry *entry;
-	
+
 	a = archive_read_new();
 	archive_read_support_filter_all(a);
 	archive_read_support_format_all(a);
@@ -887,9 +887,9 @@ struct directoryentrycollection *directoryentrycollection_getfromarchive(struct 
 			if (rpath != 0)
 			{
 				if (ISFLAG(flags, F_VERBOSE))
-					fprintf(stderr, "%s\n", s.chars);	
+					fprintf(stderr, "%s\n", s.chars);
 
-				SHA1_CTX sha1ctx;		
+				SHA1_CTX sha1ctx;
 				SHA1_Init(&sha1ctx);
 
 				uint8_t buf[8192];
@@ -907,8 +907,8 @@ struct directoryentrycollection *directoryentrycollection_getfromarchive(struct 
 				direntry.type = DT_REG;
 
 				SHA1_Final(&sha1ctx, direntry.sha1);
-		
-				directoryentrycollection_add(collection, &direntry);		
+
+				directoryentrycollection_add(collection, &direntry);
 			}
 			else
 			{
@@ -929,14 +929,14 @@ struct directoryentrycollection *directoryentrycollection_getfromarchive(struct 
 			if (rpath != 0)
 			{
 				if (ISFLAG(flags, F_VERBOSE))
-					fprintf(stderr, "%s\n", s.chars);	
+					fprintf(stderr, "%s\n", s.chars);
 
 				struct directoryentry direntry;
 				direntry.name = string_fromchars(rpath);
 				direntry.fullpath = string_fromchars(s.chars);
 				direntry.type = DT_DIR;
 
-				directoryentrycollection_add(collection, &direntry);		
+				directoryentrycollection_add(collection, &direntry);
 			}
 			else
 			{
@@ -973,7 +973,7 @@ struct directoryentrycollection *directoryentrycollection_getfromhashfile(struct
 		if (strcmp((char*)buf, "DIRHASH1\n") != 0)
 		{
 			bufferedfile_ungetbytes(bfile);
-			return 0;		
+			return 0;
 		}
 		else
 		{
@@ -996,7 +996,7 @@ struct directoryentrycollection *directoryentrycollection_getfromhashfile(struct
 						if (directoryentry_getfromstring(&line, &entry, root))
 						{
 							if (ISFLAG(flags, F_VERBOSE))
-								fprintf(stderr, "%s\n", entry.fullpath.chars);	
+								fprintf(stderr, "%s\n", entry.fullpath.chars);
 
 							directoryentrycollection_add(collection, &entry);
 						}
@@ -1052,7 +1052,7 @@ struct directoryentrycollection *directoryentrycollection_getfromfile(char *path
 		if (strcmp(path, "-") != 0)
 			fclose(f);
 	}
-	
+
 	return collection;
 }
 
@@ -1061,16 +1061,16 @@ void help_text()
 	printf("Usage: dirchanges [options] FROM TO\n");
 	printf("       dirchanges [options] --hash FROM\n\n");
 
-	printf(" -f --froot=PATH \tget files from PATH (relative to FROM parameter)\n");	
-	printf(" -t --troot=PATH \tget files from PATH (relative to TO parameter)\n");	
-	printf(" -H --hash       \tprint a list of hashes to standard output\n");	
-	printf(" -v --verbose    \tverbosely list files processed\n");	
-	printf(" -h --help       \tdisplay this help message\n\n");	
+	printf(" -f --froot=PATH \tget files from PATH (relative to FROM parameter)\n");
+	printf(" -t --troot=PATH \tget files from PATH (relative to TO parameter)\n");
+	printf(" -H --hash       \tprint a list of hashes to standard output\n");
+	printf(" -v --verbose    \tverbosely list files processed\n");
+	printf(" -h --help       \tdisplay this help message\n\n");
 }
 
 int main(int argc, char **argv)
-{	
-	static struct option long_options[] = 
+{
+	static struct option long_options[] =
 	{
 		{ "froot", 1, 0, 'f' },
 		{ "troot", 1, 0, 't' },
@@ -1084,7 +1084,7 @@ int main(int argc, char **argv)
 
 	extern char *optarg;
 	extern int optind;
-	
+
 	int opt;
 	int errors = 0;
 
@@ -1139,7 +1139,7 @@ int main(int argc, char **argv)
 			warn("too many arguments supplied");
 			errors = 1;
 		}
-	}	
+	}
 
 	if (errors)
 	{
@@ -1159,7 +1159,7 @@ int main(int argc, char **argv)
 	if (!ISFLAG(flags, F_PRINTHASHES))
 	{
 	 	if (strcmp(argv[optind+1], "-") != 0 && lstat(argv[optind+1], &f2stat) != 0)
-			fatalerror("cannot access %s", argv[optind+1]); 
+			fatalerror("cannot access %s", argv[optind+1]);
 
 		if (strcmp(argv[optind], "-") == 0 && strcmp(argv[optind+1], "-") == 0)
 			fatalerror("can't read twice from stdin");
@@ -1173,7 +1173,7 @@ int main(int argc, char **argv)
 	{
 		if (ISFLAG(flags, F_VERBOSE))
 			fprintf(stderr, "Reading from directory \"%s\"...\n", argv[optind]);
-	
+
 		collection1 = directoryentrycollection_getfromfilesystem(argv[optind], froot);
 	}
 
@@ -1184,7 +1184,7 @@ int main(int argc, char **argv)
 			collection2 = directoryentrycollection_getfromfile(argv[optind+1], troot);
 		}
 		else if (S_ISDIR(f2stat.st_mode))
-		{	
+		{
 			if (ISFLAG(flags, F_VERBOSE))
 				fprintf(stderr, "\nReading from directory \"%s\"...\n", argv[optind+1]);
 
@@ -1202,7 +1202,7 @@ int main(int argc, char **argv)
 
 	if (collection2)
 		directoryentrycollection_free(collection2);
-	
+
 	directoryentrycollection_free(collection1);
 
 	return 0;
