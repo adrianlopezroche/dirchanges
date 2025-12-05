@@ -19,6 +19,9 @@
    3. This notice may not be removed or altered from any source distribution.
 */
 
+#define PROGRAM_NAME "dirchanges"
+#define DIRCHANGES_VERSION "1.0.0"
+
 #define _DEFAULT_SOURCE
 
 #include <archive.h>
@@ -1152,6 +1155,7 @@ void help_text()
 	printf(" -s --short             tag files added, removed or modified with +, -, ~\n");
 	printf("                        instead of Added, Removed, and Modified\n");
 	printf(" -v --verbose           verbosely list the files being processed\n");
+	printf(" -V --version           print version number\n");
 	printf(" -h --help              display this help message\n\n");
 }
 
@@ -1162,6 +1166,7 @@ int main(int argc, char **argv)
 		{ "within", 'w', 1, 'w' },
 		{ "verbose", 'v', 0, 'v' },
 		{ "short", 's', 0, 's' },
+		{ "version", 'V', 0, 'V' },
 		{ "help", 'h', 0, 'h' },
 		{ 0, 0, 0 }
 	};
@@ -1228,6 +1233,10 @@ int main(int argc, char **argv)
 			case 'H':
 				SETFLAG(flags, F_PRINTHASHES);
 				break;
+
+			case 'V':
+				printf("%s %s\n", PROGRAM_NAME, DIRCHANGES_VERSION);
+				exit(0);
 
 			case 'h':
 				help_text();
