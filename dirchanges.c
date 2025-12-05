@@ -320,12 +320,19 @@ void string_append(struct string *s, const char *chars)
 
 void string_removetrailingcharacter(struct string *s, char c)
 {
-	size_t spos = strlen(s->chars) - 1;
+	const size_t len = strlen(s->chars);
+	if (len == 0)
+		return;
 
-	while (spos >= 0 && s->chars[spos] == c)
+	size_t spos = len - 1;
+
+	while (spos > 0 && s->chars[spos] == c) {
+		s->chars[spos] = '\0';
 		--spos;
+	}
 
-	s->chars[spos + 1] = '\0';
+	if (spos == 0 && s->chars[spos] == c)
+		s->chars[spos] = '\0';
 }
 
 size_t string_parse_rawhex(struct string *s, uint8_t *buf, size_t maxbytes)
