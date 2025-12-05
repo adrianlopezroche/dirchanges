@@ -391,7 +391,11 @@ struct string string_fetchtoken(struct string *s, size_t *offset, char *delim)
 
 void string_free(struct string s)
 {
-	free(s.chars);
+	if (s.chars)
+		free(s.chars);
+
+	s.chars = 0;
+	s.allocated = 0;
 }
 
 void string_freemany(struct string *s, int count)
