@@ -18,6 +18,9 @@
 
    3. This notice may not be removed or altered from any source distribution.
 */
+
+#define _DEFAULT_SOURCE
+
 #include <archive.h>
 #include <archive_entry.h>
 #include <stdio.h>
@@ -33,6 +36,7 @@
 #include <libgen.h>
 
 #include "sha1/sha1.h"
+#include "getoptions.h"
 
 #define ARCHIVE_BUFFER_SIZE 8192
 
@@ -41,8 +45,9 @@
 #define MAX(X, Y) (X > Y ? X : Y)
 #define MIN(X, Y) (X < Y ? X : Y)
 
-#define F_PRINTHASHES 0x0001
-#define F_VERBOSE 0x0002
+#define F_PRINTHASHES  0x0001
+#define F_VERBOSE      0x0002
+#define F_SHORTSUMMARY 0x0004
 
 char *program_name;
 
@@ -290,7 +295,7 @@ struct string string_fromchars(const char *chars)
 	return s;
 }
 
-void string_append(struct string *s, char *chars)
+void string_append(struct string *s, const char *chars)
 {
 	size_t needed = strlen(s->chars) + strlen(chars) + 1;
 
@@ -394,7 +399,7 @@ char *relativepath(const char *path, const char *root)
 	char *newpath = strstr(path, root);
 
 	if (newpath != path)
-		return NULL;
+		return 0;
 
 	newpath = newpath + strlen(root);
 
@@ -613,7 +618,7 @@ int directoryentry_getfromstring(struct string *s, struct directoryentry *entry,
 				if (string_parse_rawhex(&signature, entry->sha1, SHA1_DIGEST_SIZE) != SHA1_DIGEST_SIZE)
 				{
 					string_free(signature);
-					return 0;
+					return -1;
 				}
 				else
 				{
@@ -640,7 +645,7 @@ int directoryentry_getfromstring(struct string *s, struct directoryentry *entry,
 			else
 			{
 				string_free(signature);
-				return 0;
+				return -1;
 			}
 		}
 		else if (strcmp(type.chars, "D") == 0) /* Directory. */
@@ -668,7 +673,7 @@ int directoryentry_getfromstring(struct string *s, struct directoryentry *entry,
 		else /* Unknown type. */
 		{
 			string_free(type);
-			return 0;
+			return -1;
 		}
 	}
 
@@ -692,6 +697,20 @@ void directoryentrycollection_compare(struct directoryentrycollection *c1, struc
 	size_t c1pos = 0;
 	size_t c2pos = 0;
 
+	char *added_message = 0;
+	char *removed_message = 0;
+	char *modified_message = 0;
+
+	if (!ISFLAG(flags, F_SHORTSUMMARY)) {
+		added_message    = "   Added";
+		removed_message  = " Removed";
+		modified_message = "Modified";
+	} else {
+		added_message = "+";
+		removed_message = "-";
+		modified_message = "~";
+	}
+
 	while (c1pos < c1->length && c2pos < c2->length)
 	{
 		int cmp = strcmp(c1->entries[c1pos].name.chars, c2->entries[c2pos].name.chars);
@@ -703,13 +722,13 @@ void directoryentrycollection_compare(struct directoryentrycollection *c1, struc
 				if (!directoryentry_equalbydigest(&c1->entries[c1pos], &c2->entries[c2pos]))
 				{
 					differencesfound = 1;
-					printf("Modified %s\n", relativepath(c2->entries[c2pos].fullpath.chars, troot));
+					printf("%s %s\n", modified_message, relativepath(c2->entries[c2pos].fullpath.chars, troot));
 				}
 			}
 			else if (c1->entries[c1pos].type != c2->entries[c2pos].type)
 			{
 				differencesfound = 1;
-				printf("Modified %s\n", relativepath(c2->entries[c2pos].fullpath.chars, troot));
+				printf("%s %s\n", modified_message, relativepath(c2->entries[c2pos].fullpath.chars, troot));
 			}
 
 			c1pos++;
@@ -718,13 +737,13 @@ void directoryentrycollection_compare(struct directoryentrycollection *c1, struc
 		else if (cmp < 0)
 		{
 			differencesfound = 1;
-			printf(" Removed %s\n", relativepath(c1->entries[c1pos].fullpath.chars, froot));
+			printf("%s %s\n", removed_message, relativepath(c1->entries[c1pos].fullpath.chars, froot));
 			c1pos++;
 		}
 		else
 		{
 			differencesfound = 1;
-			printf("   Added %s\n", relativepath(c2->entries[c2pos].fullpath.chars, troot));
+			printf("%s %s\n", added_message, relativepath(c2->entries[c2pos].fullpath.chars, troot));
 			c2pos++;
 		}
 	}
@@ -734,17 +753,17 @@ void directoryentrycollection_compare(struct directoryentrycollection *c1, struc
 		differencesfound = 1;
 
 		while (c1pos < c1->length)
-			printf(" Removed %s\n", relativepath(c1->entries[c1pos++].fullpath.chars, froot));
+			printf("%s %s\n", removed_message, relativepath(c1->entries[c1pos++].fullpath.chars, froot));
 
 		while (c2pos < c2->length)
-			printf("   Added %s\n", relativepath(c2->entries[c2pos++].fullpath.chars, troot));
+			printf("%s %s\n", added_message, relativepath(c2->entries[c2pos++].fullpath.chars, troot));
 	}
 
 	if (!differencesfound)
 		printf("No differences found.\n");
 }
 
-void directoryentrycollection_printhashes(struct directoryentrycollection *collection, char *root)
+void directoryentrycollection_printhashes(struct directoryentrycollection *collection)
 {
 	printf("DIRHASH1\n");
 
@@ -753,7 +772,21 @@ void directoryentrycollection_printhashes(struct directoryentrycollection *colle
 		directoryentry_print(collection->entries + e);
 }
 
-void directoryentry_addfromfilesystem(struct directoryentrycollection *collection, char *path, char *root)
+struct string path_append(const char *path, const char *name) {
+	struct string s = string_fromchars("");
+
+	if (path != 0 && strcmp(path, ".") != 0)
+	{
+		string_append(&s, path);
+		string_append(&s, "/");
+	}
+
+	string_append(&s, name);
+
+	return s;
+}
+
+int directoryentry_addfromfilesystem(struct directoryentrycollection *collection, char *path, char *root, char *verbosepath)
 {
 	DIR *cd;
 
@@ -765,8 +798,10 @@ void directoryentry_addfromfilesystem(struct directoryentrycollection *collectio
 	if (cd == 0)
 	{
 		warn("could not open %s", path);
-		return;
+		return 0;
 	}
+
+	int foundone = 0;
 
 	struct dirent *dirinfo;
 	while ((dirinfo = readdir(cd)) != 0)
@@ -774,18 +809,29 @@ void directoryentry_addfromfilesystem(struct directoryentrycollection *collectio
 		if (strcmp(dirinfo->d_name, ".") == 0 || strcmp(dirinfo->d_name, "..") == 0)
 			continue;
 
+		if (dirinfo->d_type == DT_UNKNOWN) {
+			struct stat st;
+
+			struct string fullpath = path_append(path, dirinfo->d_name);
+
+			if (stat(fullpath.chars, &st) != 0) {
+				warn("could not read from '%s'", dirinfo->d_name);
+				string_free(fullpath);
+				continue;
+			}
+
+			if (S_ISREG(st.st_mode))
+				dirinfo->d_type = DT_REG;
+			else if (S_ISDIR(st.st_mode))
+				dirinfo->d_type = DT_DIR;
+
+			string_free(fullpath);
+		}
+
 		if (dirinfo->d_type != DT_DIR && dirinfo->d_type != DT_REG)
 			continue;
 
-		struct string s = string_fromchars("");
-
-		if (path != 0 && strcmp(path, ".") != 0)
-		{
-			string_append(&s, path);
-			string_append(&s, "/");
-		}
-
-		string_append(&s, dirinfo->d_name);
+		struct string s = path_append(path, dirinfo->d_name);
 
 		char *rpath = s.chars;
 		if (root != 0)
@@ -795,8 +841,14 @@ void directoryentry_addfromfilesystem(struct directoryentrycollection *collectio
 		{
 			if (rpath != 0)
 			{
+				struct string p = path_append(verbosepath, s.chars);
+
 				if (ISFLAG(flags, F_VERBOSE))
-					fprintf(stderr, "%s\n", s.chars);
+					fprintf(stderr, "%s\n", p.chars);
+
+				string_free(p);
+
+				foundone = 1;
 
 				struct directoryentry entry;
 				entry.name = string_fromchars(rpath);
@@ -806,12 +858,17 @@ void directoryentry_addfromfilesystem(struct directoryentrycollection *collectio
 				directoryentrycollection_add(collection, &entry);
 			}
 
-			directoryentry_addfromfilesystem(collection, s.chars, root);
+			foundone = directoryentry_addfromfilesystem(collection, s.chars, root, verbosepath) | foundone;
 		}
-		else if (rpath != 0)
-		{
+		else if (rpath != 0) {
+			struct string p = path_append(verbosepath, s.chars);
+
 			if (ISFLAG(flags, F_VERBOSE))
-				fprintf(stderr, "%s\n", s.chars);
+				fprintf(stderr, "%s\n", p.chars);
+
+			string_free(p);
+
+			foundone = 1;
 
 			struct directoryentry entry;
 			entry.name = string_fromchars(rpath);
@@ -830,7 +887,10 @@ void directoryentry_addfromfilesystem(struct directoryentrycollection *collectio
 
 		string_free(s);
 	}
+
 	closedir(cd);
+
+	return foundone;
 }
 
 struct directoryentrycollection *directoryentrycollection_getfromfilesystem(char *path, char *root)
@@ -846,7 +906,9 @@ struct directoryentrycollection *directoryentrycollection_getfromfilesystem(char
 	if (chdir(path) != 0)
 		fatalerror("could not chdir to %s!", path);
 
-	directoryentry_addfromfilesystem(collection, 0, root);
+	const int foundone = directoryentry_addfromfilesystem(collection, 0, root, path);
+	if (root && !foundone)
+		fatalerror("subdirectory %s not found in %s", root, path);
 
 	if (chdir(cwd) != 0)
 		fatalerror("could not chdir to %s!", path);
@@ -856,9 +918,6 @@ struct directoryentrycollection *directoryentrycollection_getfromfilesystem(char
 
 struct directoryentrycollection *directoryentrycollection_getfromarchive(struct BUFFEREDFILE *bfile, char *path, char *root)
 {
-	if (ISFLAG(flags, F_VERBOSE))
-		fprintf(stderr, "Reading from archive \"%s\"...\n", path);
-
 	struct directoryentrycollection *collection = directoryentrycollection_new();
 
 	struct archive *a;
@@ -870,6 +929,8 @@ struct directoryentrycollection *directoryentrycollection_getfromarchive(struct 
 
 	struct libarchivedata ldata;
 	ldata.bstream = bfile;
+
+	int foundone = 0;
 
 	archive_read_open(a, &ldata, openarchive, readarchive, closearchive);
 	while (archive_read_next_header(a, &entry) == ARCHIVE_OK)
@@ -886,8 +947,10 @@ struct directoryentrycollection *directoryentrycollection_getfromarchive(struct 
 
 			if (rpath != 0)
 			{
+				foundone = 1;
+
 				if (ISFLAG(flags, F_VERBOSE))
-					fprintf(stderr, "%s\n", s.chars);
+					fprintf(stderr, "[%s] %s\n", path, s.chars);
 
 				SHA1_CTX sha1ctx;
 				SHA1_Init(&sha1ctx);
@@ -926,10 +989,11 @@ struct directoryentrycollection *directoryentrycollection_getfromarchive(struct 
 			if (root != 0)
 				rpath = relativepath(s.chars, root);
 
-			if (rpath != 0)
-			{
+			if (rpath != 0) {
+				foundone = 1;
+
 				if (ISFLAG(flags, F_VERBOSE))
-					fprintf(stderr, "%s\n", s.chars);
+					fprintf(stderr, "[%s] %s\n", path, s.chars);
 
 				struct directoryentry direntry;
 				direntry.name = string_fromchars(rpath);
@@ -938,26 +1002,22 @@ struct directoryentrycollection *directoryentrycollection_getfromarchive(struct 
 
 				directoryentrycollection_add(collection, &direntry);
 			}
-			else
-			{
+			else {
 				archive_read_data_skip(a);
 			}
 
 			string_free(s);
 		}
-		else
-		{
-			struct string s = string_fromchars(archive_entry_pathname(entry));
-			string_removetrailingcharacter(&s, '/');
-
+		else {
 			archive_read_data_skip(a);
-
-			string_free(s);
 		}
 	}
 
 	archive_read_close(a);
 	archive_read_free(a);
+
+	if (root && !foundone)
+		fatalerror("directory %s not found in %s", root, path);
 
 	return collection;
 }
@@ -970,16 +1030,11 @@ struct directoryentrycollection *directoryentrycollection_getfromhashfile(struct
 	if (bufferedfile_getbytes(buf, 9, bfile) == 9)
 	{
 		buf[9] = '\0';
-		if (strcmp((char*)buf, "DIRHASH1\n") != 0)
-		{
+		if (strcmp((char*)buf, "DIRHASH1\n") != 0) {
 			bufferedfile_ungetbytes(bfile);
 			return 0;
 		}
-		else
-		{
-			if (ISFLAG(flags, F_VERBOSE))
-				fprintf(stderr, "Reading from hash file \"%s\"...\n", path);
-
+		else {
 			struct directoryentrycollection *collection = directoryentrycollection_new();
 
 			size_t lineno = 1;
@@ -988,20 +1043,25 @@ struct directoryentrycollection *directoryentrycollection_getfromhashfile(struct
 			char c[2];
 			c[1] = 0;
 
+			int result = 0;
+			int foundone = 0;
+
 			while (bufferedfile_getbytes(c, 1, bfile) == 1)
 			{
 				switch (c[0])
 				{
 					case '\n':
-						if (directoryentry_getfromstring(&line, &entry, root))
-						{
+						result = directoryentry_getfromstring(&line, &entry, root);
+
+						if (result == 1) {
+							foundone = 1;
+
 							if (ISFLAG(flags, F_VERBOSE))
-								fprintf(stderr, "%s\n", entry.fullpath.chars);
+								fprintf(stderr, "[%s] %s\n", path, entry.fullpath.chars);
 
 							directoryentrycollection_add(collection, &entry);
 						}
-						else
-						{
+						else if (result == -1) {
 							fatalerror("hashfile contains errors in line %d:\n\"%s\"", lineno, line.chars);
 						}
 
@@ -1017,6 +1077,9 @@ struct directoryentrycollection *directoryentrycollection_getfromhashfile(struct
 
 			string_free(line);
 
+			if (root && !foundone)
+				fatalerror("directory %s not found in %s", root, path);
+
 			return collection;
 		}
 	}
@@ -1025,13 +1088,17 @@ struct directoryentrycollection *directoryentrycollection_getfromhashfile(struct
 	return 0;
 }
 
+int use_stdin(const char *path) {
+	return strcmp(path, "-") == 0;
+}
+
 struct directoryentrycollection *directoryentrycollection_getfromfile(char *path, char *root)
 {
 	FILE *f;
 	struct BUFFEREDFILE *bfile;
 	struct directoryentrycollection *collection = 0;
 
-	if (strcmp(path, "-") != 0)
+	if (!use_stdin(path))
 		f = fopen(path, "rb");
 	else
 		f = freopen(NULL, "rb", stdin);
@@ -1049,100 +1116,161 @@ struct directoryentrycollection *directoryentrycollection_getfromfile(char *path
 			bufferedfile_destroy(bfile);
 		}
 
-		if (strcmp(path, "-") != 0)
+		if (!use_stdin(path))
 			fclose(f);
 	}
 
 	return collection;
 }
 
+void print_usage() {
+	printf("Usage: dirchanges [options...] FROM [options...] [TO] [options...]\n");
+}
+
 void help_text()
 {
-	printf("Usage: dirchanges [options] FROM TO\n");
-	printf("       dirchanges [options] --hash FROM\n\n");
+	print_usage();
+	printf("\n");
 
-	printf(" -f --froot=PATH \tget files from PATH (relative to FROM parameter)\n");
-	printf(" -t --troot=PATH \tget files from PATH (relative to TO parameter)\n");
-	printf(" -H --hash       \tprint a list of hashes to standard output\n");
-	printf(" -v --verbose    \tverbosely list files processed\n");
-	printf(" -h --help       \tdisplay this help message\n\n");
+	//      0         10        20        30        40        50        60        70        80
+	//------|---------|---------|---------|---------|---------|---------|---------|---------|-
+
+	printf("Summarize differences between FROM and TO, where FROM and TO are directories,\n");
+	printf("archives, or lists of hashes (as produced by the program).\n\n");
+
+	printf(" -H --hash              read files in FROM and print a list of hashes to\n");
+	printf("                        standard output for later use\n");
+	printf(" -w --within=DIRECTORY  include only files appearing below DIRECTORY; this\n");
+	printf("                        option affects the preceding argument (FROM or TO) and,\n");
+	printf("                        if used, must appear directly after it\n");
+	printf(" -s --short             tag files added, removed or modified with +, -, ~\n");
+	printf("                        instead of Added, Removed, and Modified\n");
+	printf(" -v --verbose           verbosely list the files being processed\n");
+	printf(" -h --help              display this help message\n\n");
 }
 
 int main(int argc, char **argv)
 {
-	static struct option long_options[] =
-	{
-		{ "froot", 1, 0, 'f' },
-		{ "troot", 1, 0, 't' },
-		{ "verbose", 0, 0, 'v' },
-		{ "hash", 0, 0, 'H' },
-		{ "help", 0, 0, 'h' },
-		{ 0, 0, 0, 0 }
+	static struct getoptions_option opts[] = {
+		{ "hash", 'H', 0, 'H' },
+		{ "within", 'w', 1, 'w' },
+		{ "verbose", 'v', 0, 'v' },
+		{ "short", 's', 0, 's' },
+		{ "help", 'h', 0, 'h' },
+		{ 0, 0, 0 }
 	};
 
 	program_name = argv[0];
 
-	extern char *optarg;
-	extern int optind;
+	char *argument = 0;
 
-	int opt;
+	int option = 0;
+	int optindex = 0;
+	int currentarg = 0;
+	int withinoptcount = 0;
+
 	int errors = 0;
 
-	char *froot = 0;
-	char *troot = 0;
+	char *dir_from = 0;
+	char *dir_to = 0;
+	char *within_from = 0;
+	char *within_to = 0;
 
-	while ((opt = getopt_long(argc, argv, "f:t:vHh", long_options, 0)) != -1)
-	{
-		switch (opt)
-		{
-		case 'f':
-			froot = optarg;
-			break;
+	int dir_from_position = 0;
+	int dir_to_position = 0;
 
-		case 't':
-			troot = optarg;
-			break;
+	while ((option = getoptions(argc, argv, opts, &argument, &optindex)) != GETOPTIONS_END) {
+		++currentarg;
 
-		case 'H':
-			SETFLAG(flags, F_PRINTHASHES);
-			break;
+		switch (option) {
+			case 'w':
+				++withinoptcount;
 
-		case 'v':
-			SETFLAG(flags, F_VERBOSE);
-			break;
+				if (withinoptcount > 2) {
+					warn("extra option '%s'", argv[optindex]);
+					errors = 1;
+				} else if (!dir_from) {
+					warn("'%s' must follow the argument it applies to", argv[optindex]);
+					errors = 1;
+				} else if (!dir_to && withinoptcount == 2) {
+					warn("'%s' must follow the argument it applies to", argv[optindex]);
+					errors = 1;
+				} else if (!dir_to && dir_from_position+1 != currentarg) {
+					warn("'%s' must immediately follow the argument it applies to", argv[optindex]);
+					errors = 1;
+				} else if (dir_to && dir_to_position+1 != currentarg) {
+					warn("'%s' must immediately follow the argument it applies to", argv[optindex]);
+					errors = 1;
+				} else {
+					if (dir_to != 0) {
+						within_to = argument;
+					} else if (dir_from != 0) {
+						within_from = argument;
+					}
+				}
 
-		case 'h':
-			help_text();
-			exit(0);
+				break;
 
-		case '?':
-			errors = 1;
-			break;
+			case 'v':
+				SETFLAG(flags, F_VERBOSE);
+				break;
+
+			case 's':
+				SETFLAG(flags, F_SHORTSUMMARY);
+				break;
+
+			case 'H':
+				SETFLAG(flags, F_PRINTHASHES);
+				break;
+
+			case 'h':
+				help_text();
+				exit(0);
+
+			case GETOPTIONS_NONOPT:
+			    if (dir_from == 0) {
+					dir_from = argument;
+					dir_from_position = currentarg;
+				} else if (dir_to == 0) {
+					dir_to = argument;
+					dir_to_position = currentarg;
+				} else {
+					warn("extra argument '%s'", argument);
+					errors = 1;
+				}
+
+				break;
+
+			case GETOPTIONS_ERROR:
+				errors = 1;
+				break;
 		}
+
+		if (errors)
+			break;
 	}
 
-	if (!errors)
-	{
-		int nonoptc = argc - optind;
-		if (nonoptc < 1)
-		{
-			warn("must specify FROM and TO arguments");
-			errors = 1;
-		}
-		else if (nonoptc < 2 && !ISFLAG(flags, F_PRINTHASHES))
-		{
-			warn("must specify TO argument");
-			errors = 1;
-		}
-		else if ((nonoptc > 1 && ISFLAG(flags, F_PRINTHASHES)) || nonoptc > 2)
-		{
-			warn("too many arguments supplied");
-			errors = 1;
-		}
+	if (ISFLAG(flags, F_PRINTHASHES) && dir_to != 0) {
+		warn("extra argument '%s'", dir_to);
+		errors = 1;
 	}
 
-	if (errors)
-	{
+	if (!errors) {
+		if (!ISFLAG(flags, F_PRINTHASHES)) {
+			if (dir_from == 0 && dir_to == 0)
+				errors = 1;
+			else if (dir_to == 0)
+				errors = 1;
+		} else {
+			if (dir_from == 0)
+				errors = 1;
+		}
+
+		if (errors)
+			print_usage();
+	}
+
+	if (errors) {
 		fprintf(stderr, "Try '%s --help' for more information.\n", basename(argv[0]));
 		return 0;
 	}
@@ -1153,42 +1281,30 @@ int main(int argc, char **argv)
 	struct stat f1stat;
 	struct stat f2stat;
 
-	if (strcmp(argv[optind], "-") != 0 && lstat(argv[optind], &f1stat) != 0)
-		fatalerror("cannot access %s", argv[optind]);
+	if (dir_from && use_stdin(dir_from) && dir_to && use_stdin(dir_to))
+		fatalerror("cannot read twice from stdin");
 
-	if (!ISFLAG(flags, F_PRINTHASHES))
-	{
-	 	if (strcmp(argv[optind+1], "-") != 0 && lstat(argv[optind+1], &f2stat) != 0)
-			fatalerror("cannot access %s", argv[optind+1]);
+	if (!use_stdin(dir_from) && stat(dir_from, &f1stat) != 0)
+		fatalerror("unable to read or open '%s'", dir_from);
 
-		if (strcmp(argv[optind], "-") == 0 && strcmp(argv[optind+1], "-") == 0)
-			fatalerror("can't read twice from stdin");
+	if (S_ISDIR(f1stat.st_mode)) {
+		collection1 = directoryentrycollection_getfromfilesystem(dir_from, within_from);
+	} else if (S_ISREG(f1stat.st_mode) || use_stdin(dir_from)) {
+		collection1 = directoryentrycollection_getfromfile(dir_from, within_from);
+	} else {
+		fatalerror("%s is not a file or directory", dir_from);
 	}
 
-	if (strcmp(argv[optind], "-") == 0 || S_ISREG(f1stat.st_mode))
-	{
-		collection1 = directoryentrycollection_getfromfile(argv[optind], froot);
-	}
-	else if (S_ISDIR(f1stat.st_mode))
-	{
-		if (ISFLAG(flags, F_VERBOSE))
-			fprintf(stderr, "Reading from directory \"%s\"...\n", argv[optind]);
+	if (dir_to) {
+		if (!use_stdin(dir_to) && stat(dir_to, &f2stat) != 0)
+			fatalerror("unable to read or open '%s'", dir_to);
 
-		collection1 = directoryentrycollection_getfromfilesystem(argv[optind], froot);
-	}
-
-	if (!ISFLAG(flags, F_PRINTHASHES))
-	{
-		if (strcmp(argv[optind+1], "-") == 0 || S_ISREG(f2stat.st_mode))
-		{
-			collection2 = directoryentrycollection_getfromfile(argv[optind+1], troot);
-		}
-		else if (S_ISDIR(f2stat.st_mode))
-		{
-			if (ISFLAG(flags, F_VERBOSE))
-				fprintf(stderr, "\nReading from directory \"%s\"...\n", argv[optind+1]);
-
-			collection2 = directoryentrycollection_getfromfilesystem(argv[optind+1], troot);
+		if (S_ISDIR(f2stat.st_mode)) {
+			collection2 = directoryentrycollection_getfromfilesystem(dir_to, within_to);
+		} else if (S_ISREG(f2stat.st_mode) || use_stdin(dir_to)) {
+			collection2 = directoryentrycollection_getfromfile(dir_to, within_to);
+		} else {
+			fatalerror("%s is not a file or directory", dir_to);
 		}
 	}
 
@@ -1196,9 +1312,9 @@ int main(int argc, char **argv)
 		fprintf(stderr, "\n");
 
 	if (ISFLAG(flags, F_PRINTHASHES))
-		directoryentrycollection_printhashes(collection1, argv[optind]);
+		directoryentrycollection_printhashes(collection1);
 	else
-		directoryentrycollection_compare(collection1, collection2, froot, troot);
+		directoryentrycollection_compare(collection1, collection2, within_from, within_to);
 
 	if (collection2)
 		directoryentrycollection_free(collection2);
