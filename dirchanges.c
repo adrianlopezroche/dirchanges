@@ -1150,8 +1150,8 @@ void help_text()
 	printf(" -H --hash              read files in FROM and print a list of hashes to\n");
 	printf("                        standard output for later use\n");
 	printf(" -w --within=DIRECTORY  include only files appearing below DIRECTORY; this\n");
-	printf("                        option affects the preceding argument (FROM or TO) and,\n");
-	printf("                        if used, must appear directly after it\n");
+	printf("                        option applies to the preceding argument (FROM or TO)\n");
+	printf("                        and, if used, must appear directly after it\n");
 	printf(" -s --short             tag files added, removed or modified with +, -, ~\n");
 	printf("                        instead of Added, Removed, and Modified\n");
 	printf(" -v --verbose           verbosely list the files being processed\n");
