@@ -1,0 +1,16 @@
+# Installation
+
+To install dirchanges, issue the following commands:
+
+make fdupes
+sudo make install
+
+The default installation location is /usr/local/bin. You may change this to a
+different location by editing the Makefile.
+
+# Dependencies
+
+libarchive
+
+    To enable comparisons against content stored in archive formats such as
+    tar, 7z, zip, rar, and others.
