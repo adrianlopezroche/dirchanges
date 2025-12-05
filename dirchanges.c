@@ -34,8 +34,9 @@
 #include <getopt.h>
 #include <errno.h>
 #include <libgen.h>
+#include <stdlib.h>
 
-#include "sha1/sha1.h"
+#include "sha256/sha256.h"
 #include "getoptions.h"
 
 #define ARCHIVE_BUFFER_SIZE 8192
@@ -64,7 +65,7 @@ struct directoryentry
 	struct string name;
 	struct string fullpath;
 	unsigned char type;
-	uint8_t sha1[SHA1_DIGEST_SIZE];
+	unsigned char hash[SHA256_BYTES_SIZE];
 };
 
 struct directoryentrycollection
@@ -464,15 +465,14 @@ void directoryentrycollection_free(struct directoryentrycollection *collection)
 	free(collection);
 }
 
-int getfiledigest(char *path, uint8_t *digest)
+int getfiledigest(char *path, unsigned char *digest)
 {
-	SHA1_CTX sha1ctx;
-
 	FILE *stream = fopen(path, "rb");
 	if (!stream)
 		return 0;
 
-	SHA1_Init(&sha1ctx);
+	sha256 sha256_state;
+	sha256_init(&sha256_state);
 
 	struct BUFFEREDFILE *bf = bufferedfile_init(stream, ARCHIVE_BUFFER_SIZE);
 	if (!bf)
@@ -486,11 +486,11 @@ int getfiledigest(char *path, uint8_t *digest)
 	size_t read = bufferedfile_getbytes_unbuffered(buf, ARCHIVE_BUFFER_SIZE, bf);
 	while (read > 0)
 	{
-		SHA1_Update(&sha1ctx, buf, read);
+		sha256_append(&sha256_state, buf, read);
 		read = bufferedfile_getbytes_unbuffered(buf, ARCHIVE_BUFFER_SIZE, bf);
 	}
 
-	SHA1_Final(&sha1ctx, digest);
+	sha256_finalize_bytes(&sha256_state, digest);
 
 	fclose(stream);
 
@@ -572,8 +572,8 @@ void directoryentry_print(struct directoryentry *de)
 
 	if (de->type == DT_REG)
 	{
-		for (x = 0; x < SHA1_DIGEST_SIZE; ++x)
-			printf("%02x", de->sha1[x]);
+		for (x = 0; x < SHA256_BYTES_SIZE; ++x)
+			printf("%02x", de->hash[x]);
 
 		printf(" ");
 	}
@@ -584,8 +584,8 @@ void directoryentry_print(struct directoryentry *de)
 int directoryentry_equalbydigest(const struct directoryentry *de1, const struct directoryentry *de2)
 {
 	int x;
-	for (x = 0; x < SHA1_DIGEST_SIZE; ++x)
-		if (de1->sha1[x] != de2->sha1[x])
+	for (x = 0; x < SHA256_BYTES_SIZE; ++x)
+		if (de1->hash[x] != de2->hash[x])
 			return 0;
 
 	return 1;
@@ -615,7 +615,7 @@ int directoryentry_getfromstring(struct string *s, struct directoryentry *entry,
 			struct string signature = string_fetchtoken(s, &offset, " ");
 			if (signature.chars[0] != '\0')
 			{
-				if (string_parse_rawhex(&signature, entry->sha1, SHA1_DIGEST_SIZE) != SHA1_DIGEST_SIZE)
+				if (string_parse_rawhex(&signature, entry->hash, SHA256_BYTES_SIZE) != SHA256_BYTES_SIZE)
 				{
 					string_free(signature);
 					return -1;
@@ -765,7 +765,7 @@ void directoryentrycollection_compare(struct directoryentrycollection *c1, struc
 
 void directoryentrycollection_printhashes(struct directoryentrycollection *collection)
 {
-	printf("DIRHASH1\n");
+	printf("DIRHASH2\n");
 
 	size_t e;
 	for (e = 0; e < collection->length; ++e)
@@ -875,7 +875,7 @@ int directoryentry_addfromfilesystem(struct directoryentrycollection *collection
 			entry.fullpath = string_fromchars(s.chars);
 			entry.type = dirinfo->d_type;
 
-			if (getfiledigest(s.chars, entry.sha1))
+			if (getfiledigest(s.chars, entry.hash))
 			{
 				directoryentrycollection_add(collection, &entry);
 			}
@@ -931,9 +931,12 @@ struct directoryentrycollection *directoryentrycollection_getfromarchive(struct 
 	ldata.bstream = bfile;
 
 	int foundone = 0;
+	int archiveresult = 0;
 
-	archive_read_open(a, &ldata, openarchive, readarchive, closearchive);
-	while (archive_read_next_header(a, &entry) == ARCHIVE_OK)
+	if (archive_read_open(a, &ldata, openarchive, readarchive, closearchive) != ARCHIVE_OK)
+		fatalerror("error reading archive '%s'", path);
+
+	while ((archiveresult = archive_read_next_header(a, &entry)) == ARCHIVE_OK)
 	{
 		mode_t filetype = archive_entry_filetype(entry);
 
@@ -952,14 +955,14 @@ struct directoryentrycollection *directoryentrycollection_getfromarchive(struct 
 				if (ISFLAG(flags, F_VERBOSE))
 					fprintf(stderr, "[%s] %s\n", path, s.chars);
 
-				SHA1_CTX sha1ctx;
-				SHA1_Init(&sha1ctx);
+				sha256 sha256_state;
+				sha256_init(&sha256_state);
 
 				uint8_t buf[8192];
 				ssize_t read = archive_read_data(a, buf, 8192);
 				while (read > 0)
 				{
-					SHA1_Update(&sha1ctx, buf, read);
+					sha256_append(&sha256_state, buf, read);
 
 					read = archive_read_data(a, buf, 8192);
 				}
@@ -969,7 +972,7 @@ struct directoryentrycollection *directoryentrycollection_getfromarchive(struct 
 				direntry.fullpath = string_fromchars(s.chars);
 				direntry.type = DT_REG;
 
-				SHA1_Final(&sha1ctx, direntry.sha1);
+				sha256_finalize_bytes(&sha256_state, direntry.hash);
 
 				directoryentrycollection_add(collection, &direntry);
 			}
@@ -1016,6 +1019,9 @@ struct directoryentrycollection *directoryentrycollection_getfromarchive(struct 
 	archive_read_close(a);
 	archive_read_free(a);
 
+	if (archiveresult != ARCHIVE_EOF)
+		fatalerror("error reading archive '%s'", path);
+
 	if (root && !foundone)
 		fatalerror("directory %s not found in %s", root, path);
 
@@ -1030,7 +1036,7 @@ struct directoryentrycollection *directoryentrycollection_getfromhashfile(struct
 	if (bufferedfile_getbytes(buf, 9, bfile) == 9)
 	{
 		buf[9] = '\0';
-		if (strcmp((char*)buf, "DIRHASH1\n") != 0) {
+		if (strcmp((char*)buf, "DIRHASH2\n") != 0) {
 			bufferedfile_ungetbytes(bfile);
 			return 0;
 		}
