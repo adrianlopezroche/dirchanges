@@ -27,6 +27,30 @@ in time, producing a list of files and directories added, modified, or removed.
 ```
 
 
+# Examples
+
+To keep track of changes to a directory over time you may create a list of hashes from
+the contents of that directory and save them to a file:
+
+  `$ dirchanges --hash directory > directory.hashes`
+
+You may then obtain a list of changes as follows:
+
+  `$ dirchanges directory.hashes directory`
+
+Another use case is to compare a directory against a backup of it:
+
+  `$ dirchanges directory-backup.tar directory`
+
+For directories deeper down the archive's root, the --within option may prove useful:
+
+  `$ dirchanges directory-backup.tar --within=home/user/directory directory`
+
+You may also compare directories across different media:
+
+  `$ dirchanges directory /media/USB\ Drive/directory`
+
+
 # Contact Information for Adrian Lopez
 
 email: adrianlopezroche@gmail.com
