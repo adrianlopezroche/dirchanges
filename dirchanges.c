@@ -1156,7 +1156,8 @@ void help_text()
 	//------|---------|---------|---------|---------|---------|---------|---------|---------|-
 
 	printf("Summarize differences between FROM and TO, where FROM and TO are directories,\n");
-	printf("archives, or lists of hashes (as produced by the program).\n\n");
+	printf("archives, or lists of hashes representing the same content at different points\n");
+	printf("in time, producing a list of files and directories added, modified, or removed.\n\n");
 
 	printf(" -H --hash              read files in FROM and print a list of hashes to\n");
 	printf("                        standard output for later use\n");
