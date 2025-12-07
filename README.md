@@ -13,6 +13,7 @@ Usage: dirchanges [options...] FROM [options...] [TO] [options...]
 Summarize differences between FROM and TO, where FROM and TO are directories,
 archives, or lists of hashes representing the same content at different points
 in time, producing a list of files and directories added, modified, or removed.
+When FROM or TO is -, read archives or hashes from standard input.
 
  -H --hash              read files in FROM and print a list of hashes to
                         standard output for later use
@@ -29,8 +30,8 @@ in time, producing a list of files and directories added, modified, or removed.
 
 # Examples
 
-To keep track of changes to a directory over time you may create a list of hashes from
-the contents of that directory and save them to a file:
+To keep track of changes to a directory over time you may create a list of
+hashes from the contents of that directory and save them to a file:
 
   `$ dirchanges --hash directory > directory.hashes`
 
@@ -38,17 +39,22 @@ You may then obtain a list of changes as follows:
 
   `$ dirchanges directory.hashes directory`
 
-Another use case is to compare a directory against a backup of it:
+Another use case is to compare two directories, such as across different media:
 
-  `$ dirchanges directory-backup.tar directory`
+  `$ dirchanges directory /media/USB\ Drive/directory`
 
-For directories deeper down the archive's root, the --within option may prove useful:
+You may also compare a directory against an archive of that directory:
+
+  `$ dirchanges directory-archive.7z directory`
+
+For archived directories other than the archive's top-level directory, the
+--within option may be used like so:
 
   `$ dirchanges directory-backup.tar --within=home/user/directory directory`
 
-You may also compare directories across different media:
+Content can also be read from standard input as in the following example:
 
-  `$ dirchanges directory /media/USB\ Drive/directory`
+  `$ rot13 directory.hashes | dirchanges - directory`
 
 
 # Contact Information for Adrian Lopez
