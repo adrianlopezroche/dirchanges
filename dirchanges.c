@@ -664,7 +664,7 @@ int directoryentry_addfromfilesystem(struct directoryentrycollection *collection
 
 			struct string fullpath = path_append(path, dirinfo->d_name);
 
-			if (stat(fullpath.chars, &st) != 0) {
+			if (lstat(fullpath.chars, &st) != 0) {
 				warn("could not read from '%s'", dirinfo->d_name);
 				string_free(fullpath);
 				continue;
