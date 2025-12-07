@@ -50,7 +50,7 @@ You may also compare a directory against an archive of that directory:
 For archived directories other than the archive's top-level directory, the
 --within option may be used like so:
 
-  `$ dirchanges directory-backup.tar --within=home/user/directory directory`
+  `$ dirchanges home-backup.tar --within=home/user/directory directory`
 
 Content can also be read from standard input as in the following example:
 
