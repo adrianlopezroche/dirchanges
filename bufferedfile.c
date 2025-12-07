@@ -19,10 +19,13 @@
    3. This notice may not be removed or altered from any source distribution.
 */
 
-#include "bufferedfile.h"
-#include <memory.h>
+#define  _POSIX_C_SOURCE 200112L
+
+#include <stdio.h>
 #include <stdlib.h>
+#include <memory.h>
 #include <err.h>
+#include "bufferedfile.h"
 
 #define MAX(X, Y) (X > Y ? X : Y)
 #define MIN(X, Y) (X < Y ? X : Y)
@@ -60,7 +63,7 @@ void bufferedfile_destroy(struct BUFFEREDFILE *f)
 	free(f);
 }
 
-int Intersection(uint64_t *i0, uint64_t *i1, uint64_t a0, uint64_t a1, uint64_t b0, uint64_t b1)
+int bufferedfile_intersection(uint64_t *i0, uint64_t *i1, uint64_t a0, uint64_t a1, uint64_t b0, uint64_t b1)
 {
 	if (a1 <= b0 || b1 <= a0)
 		return 0;
@@ -71,7 +74,7 @@ int Intersection(uint64_t *i0, uint64_t *i1, uint64_t a0, uint64_t a1, uint64_t 
 	return 1;
 }
 
-size_t _bufferedfile_getbytes(void *buf, size_t count, struct BUFFEREDFILE *file, int buffered)
+size_t bufferedfile_getbytes_(void *buf, size_t count, struct BUFFEREDFILE *file, int buffered)
 {
 	size_t bytesread;
 	uint64_t i0;
@@ -125,7 +128,7 @@ size_t _bufferedfile_getbytes(void *buf, size_t count, struct BUFFEREDFILE *file
 	bytesread = 0;
 
 	/* Does read operation include data from buffer 0? */
-	if (Intersection(&i0, &i1, file->fpos, file->fpos + count, file->buffer0start, file->buffer0end))
+	if (bufferedfile_intersection(&i0, &i1, file->fpos, file->fpos + count, file->buffer0start, file->buffer0end))
 	{
 		/* Copy contents from buffer 0 onto target buf. */
 		if (file->buffer0start <= i0)
@@ -137,7 +140,7 @@ size_t _bufferedfile_getbytes(void *buf, size_t count, struct BUFFEREDFILE *file
 	}
 
 	/* Does read operation include data from buffer 1? */
-	if (Intersection(&i0, &i1, file->fpos, file->fpos + count, file->buffer1start, file->buffer1end))
+	if (bufferedfile_intersection(&i0, &i1, file->fpos, file->fpos + count, file->buffer1start, file->buffer1end))
 	{
 		/* Copy contents from buffer 1 onto target buf. */
 		if (file->buffer1start <= i0)
@@ -169,15 +172,54 @@ size_t _bufferedfile_getbytes(void *buf, size_t count, struct BUFFEREDFILE *file
 
 size_t bufferedfile_getbytes(void *buf, size_t count, struct BUFFEREDFILE *file)
 {
-	return _bufferedfile_getbytes(buf, count, file, 1);
+	return bufferedfile_getbytes_(buf, count, file, 1);
 }
 
 size_t bufferedfile_getbytes_unbuffered(void *buf, size_t count, struct BUFFEREDFILE *file)
 {
-	return _bufferedfile_getbytes(buf, count, file, 0);
+	return bufferedfile_getbytes_(buf, count, file, 0);
 }
 
 void bufferedfile_ungetbytes(struct BUFFEREDFILE *file)
 {
 	file->fpos = file->rollback;
+}
+
+int bufferedfile_seek(long offset, int whence, struct BUFFEREDFILE *file)
+{
+	if (fseeko(file->stream, offset, whence) == 0)
+	{
+		off_t newpos = 0;
+
+		switch (whence) {
+			case SEEK_SET:
+				file->fpos = offset;
+				break;
+
+			case SEEK_CUR:
+				file->fpos += offset;
+				break;
+
+			case SEEK_END:
+				newpos = ftello(file->stream);
+				if (newpos == -1)
+					return 0;
+
+				file->fpos = newpos;
+
+				break;
+		}
+
+		file->eof = 0;
+		file->error = 0;
+		file->rollback = file->fpos;
+		file->buffer0start = file->fpos;
+		file->buffer0end = file->fpos;
+		file->buffer1start = file->fpos;
+		file->buffer1end = file->fpos;
+
+		return 1;
+	}
+
+	return 0;
 }

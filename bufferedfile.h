@@ -43,10 +43,9 @@ struct BUFFEREDFILE
 
 struct BUFFEREDFILE *bufferedfile_init(FILE *stream, size_t maxlookahead);
 void bufferedfile_destroy(struct BUFFEREDFILE *f);
-int Intersection(uint64_t *i0, uint64_t *i1, uint64_t a0, uint64_t a1, uint64_t b0, uint64_t b1);
-size_t _bufferedfile_getbytes(void *buf, size_t count, struct BUFFEREDFILE *file, int buffered);
 size_t bufferedfile_getbytes(void *buf, size_t count, struct BUFFEREDFILE *file);
 size_t bufferedfile_getbytes_unbuffered(void *buf, size_t count, struct BUFFEREDFILE *file);
 void bufferedfile_ungetbytes(struct BUFFEREDFILE *file);
+int bufferedfile_seek(long offset, int whence, struct BUFFEREDFILE *file);
 
 #endif
