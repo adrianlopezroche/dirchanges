@@ -394,6 +394,15 @@ int closearchive(struct archive *a, void *data)
 	return ARCHIVE_OK;
 }
 
+la_int64_t seekarchive(struct archive *, void *data, la_int64_t offset, int whence) {
+	struct libarchivedata *ldata = data;
+
+	if (bufferedfile_seek(offset, whence, ldata->bstream))
+		return ldata->bstream->fpos;
+	else
+		return ARCHIVE_FATAL;
+}
+
 void directoryentry_print(struct directoryentry *de)
 {
 	switch (de->type)
@@ -767,6 +776,7 @@ struct directoryentrycollection *directoryentrycollection_getfromarchive(struct 
 	a = archive_read_new();
 	archive_read_support_filter_all(a);
 	archive_read_support_format_all(a);
+	archive_read_set_seek_callback(a, seekarchive);
 
 	struct libarchivedata ldata;
 	ldata.bstream = bfile;
