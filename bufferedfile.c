@@ -156,8 +156,10 @@ size_t bufferedfile_getbytes_(void *buf, size_t count, struct BUFFEREDFILE *file
 	{
 		/* Read unbuffered data directly from stream. */
 		size_t read = fread(buf + bytesread, 1, count - bytesread, file->stream);
-		if (read != count - bytesread)
-			file->eof = 1;
+		if (read != count - bytesread) {
+			file->eof = feof(file->stream);
+			file->error = ferror(file->stream);
+		}
 
 		bytesread += read;
 
