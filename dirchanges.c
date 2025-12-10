@@ -51,6 +51,7 @@
 #define F_PRINTHASHES  0x0001
 #define F_VERBOSE      0x0002
 #define F_SHORTSUMMARY 0x0004
+#define F_SHOWPROGRESS 0x0008
 
 char *program_name;
 
@@ -77,6 +78,14 @@ struct directoryentrycollection
 	struct directoryentry *entries;
 };
 
+struct progress {
+	int phase;
+	size_t filesprocessed;
+	uint64_t bytesprocessed;
+	uint64_t totalbytes;
+	int lastlength;
+};
+
 struct libarchivedata
 {
 	struct BUFFEREDFILE *bstream;
@@ -85,7 +94,6 @@ struct libarchivedata
 
 void fatalerror(char *message, ...)
 {
-
 	va_list ap;
 
 	va_start(ap, message);
@@ -110,6 +118,84 @@ void warn(char *message, ...)
 	vfprintf(stderr, message, ap);
 
 	fprintf(stderr, "\n");
+}
+
+void gethumansize(uint64_t size, double *humansize, char **humansizeunit) {
+	double sizedbl = (double)size;
+
+	if (sizedbl < 1000) {
+		*humansize = sizedbl;
+		*humansizeunit = "B";
+	} else if (sizedbl < 1000000) {
+		*humansize = sizedbl / 1000;
+		*humansizeunit = "K";
+	} else if (sizedbl < 1000000000) {
+		*humansize = sizedbl / 1000000;
+		*humansizeunit = "M";
+	} else if (sizedbl < 1000000000000) {
+		*humansize = sizedbl / 1000000000;
+		*humansizeunit = "G";
+	} else if (sizedbl < 1000000000000000) {
+		*humansize = sizedbl / 1000000000000;
+		*humansizeunit = "T";
+	} else if (sizedbl < 1000000000000000000) {
+		*humansize = sizedbl / 1000000000000000;
+		*humansizeunit = "P";
+	} else {
+		*humansize = sizedbl / 1000000000000000000;
+		*humansizeunit = "E";
+	}
+}
+
+void clearprogress(struct progress *progress) {
+	int chars = progress->lastlength;
+
+	fputc('\r', stderr);
+
+	char line[81];
+	if (chars < sizeof(line)) {
+		for (int c = 0; c < chars; ++c)
+			line[c] = ' ';
+
+		line[chars] = '\0';
+
+		fprintf(stderr, "%s", line);
+	} else {
+		for (int c = 0; c < chars; ++c)
+			fputc(' ', stderr);
+	}
+
+	fputc('\r', stderr);
+
+	fflush(stderr);
+}
+
+void showprogress(struct progress *progress, int showbytes) {
+	char message[81];
+	char *humansizeunit;
+	double humansize;
+
+	clearprogress(progress);
+
+	if (progress->phase != 0) {
+		if (showbytes) {
+			gethumansize(progress->bytesprocessed, &humansize, &humansizeunit);
+			progress->lastlength = snprintf(message, sizeof(message) - 1, "%d of 2: %0.1f %s, %lu items processed.", progress->phase, humansize, humansizeunit, progress->filesprocessed);
+		} else {
+			progress->lastlength = snprintf(message, sizeof(message) - 1, "%d of 2: %lu items processed.", progress->phase, progress->filesprocessed);
+		}
+	} else {
+		if (showbytes) {
+			gethumansize(progress->bytesprocessed, &humansize, &humansizeunit);
+			progress->lastlength = snprintf(message, sizeof(message) - 1, "%0.1f %s, %lu items processed.", humansize, humansizeunit, progress->filesprocessed);
+		} else {
+			progress->lastlength = snprintf(message, sizeof(message) - 1, "%lu items processed.", progress->filesprocessed);
+		}
+	}
+
+	fprintf(stderr, "%s", message);
+
+	fflush(stderr);
 }
 
 struct string string_fromchars(const char *chars)
@@ -636,7 +722,7 @@ struct string path_append(const char *path, const char *name) {
 	return s;
 }
 
-int directoryentry_addfromfilesystem(struct directoryentrycollection *collection, char *path, char *root, char *verbosepath)
+int directoryentry_addfromfilesystem(struct directoryentrycollection *collection, char *path, char *root, char *verbosepath, struct progress *progress)
 {
 	DIR *cd;
 
@@ -647,6 +733,7 @@ int directoryentry_addfromfilesystem(struct directoryentrycollection *collection
 
 	if (cd == 0)
 	{
+		clearprogress(progress);
 		warn("could not open %s", path);
 		return 0;
 	}
@@ -665,6 +752,7 @@ int directoryentry_addfromfilesystem(struct directoryentrycollection *collection
 			struct string fullpath = path_append(path, dirinfo->d_name);
 
 			if (lstat(fullpath.chars, &st) != 0) {
+				clearprogress(progress);
 				warn("could not read from '%s'", dirinfo->d_name);
 				string_free(fullpath);
 				continue;
@@ -687,17 +775,24 @@ int directoryentry_addfromfilesystem(struct directoryentrycollection *collection
 		if (root != 0)
 			rpath = relativepath(s.chars, root);
 
+		if (ISFLAG(flags, F_VERBOSE)) {
+			if (ISFLAG(flags, F_SHOWPROGRESS))
+				clearprogress(progress);
+
+			struct string p = path_append(verbosepath, s.chars);
+
+			fprintf(stderr, "%s\n", p.chars);
+
+			string_free(p);
+		}
+
+		if (ISFLAG(flags, F_SHOWPROGRESS))
+			showprogress(progress, 1);
+
 		if (dirinfo->d_type == DT_DIR)
 		{
 			if (rpath != 0)
 			{
-				struct string p = path_append(verbosepath, s.chars);
-
-				if (ISFLAG(flags, F_VERBOSE))
-					fprintf(stderr, "%s\n", p.chars);
-
-				string_free(p);
-
 				foundone = 1;
 
 				struct directoryentry entry;
@@ -706,18 +801,14 @@ int directoryentry_addfromfilesystem(struct directoryentrycollection *collection
 				entry.type = dirinfo->d_type;
 
 				directoryentrycollection_add(collection, &entry);
+
+				if (ISFLAG(flags, F_SHOWPROGRESS))
+					++progress->filesprocessed;
 			}
 
-			foundone = directoryentry_addfromfilesystem(collection, s.chars, root, verbosepath) | foundone;
+			foundone = directoryentry_addfromfilesystem(collection, s.chars, root, verbosepath, progress) | foundone;
 		}
 		else if (rpath != 0) {
-			struct string p = path_append(verbosepath, s.chars);
-
-			if (ISFLAG(flags, F_VERBOSE))
-				fprintf(stderr, "%s\n", p.chars);
-
-			string_free(p);
-
 			foundone = 1;
 
 			struct directoryentry entry;
@@ -728,9 +819,22 @@ int directoryentry_addfromfilesystem(struct directoryentrycollection *collection
 			if (getfiledigest(s.chars, entry.hash))
 			{
 				directoryentrycollection_add(collection, &entry);
+
+				if (ISFLAG(flags, F_SHOWPROGRESS)) {
+					struct string fullpath = path_append(path, dirinfo->d_name);
+
+					struct stat st;
+					if (stat(fullpath.chars, &st) == 0)
+						progress->bytesprocessed += st.st_size;
+
+					string_free(fullpath);
+
+					++progress->filesprocessed;
+				}
 			}
 			else
 			{
+				clearprogress(progress);
 				warn("error obtaining hash for %s", s.chars);
 			}
 		}
@@ -743,7 +847,7 @@ int directoryentry_addfromfilesystem(struct directoryentrycollection *collection
 	return foundone;
 }
 
-struct directoryentrycollection *directoryentrycollection_getfromfilesystem(char *path, char *root)
+struct directoryentrycollection *directoryentrycollection_getfromfilesystem(char *path, char *root, struct progress *progress)
 {
 	struct directoryentrycollection *collection = directoryentrycollection_new();
 	if (!collection)
@@ -756,7 +860,7 @@ struct directoryentrycollection *directoryentrycollection_getfromfilesystem(char
 	if (chdir(path) != 0)
 		fatalerror("could not chdir to %s!", path);
 
-	const int foundone = directoryentry_addfromfilesystem(collection, 0, root, path);
+	const int foundone = directoryentry_addfromfilesystem(collection, 0, root, path, progress);
 	if (root && !foundone)
 		fatalerror("subdirectory %s not found in %s", root, path);
 
@@ -766,7 +870,7 @@ struct directoryentrycollection *directoryentrycollection_getfromfilesystem(char
 	return collection;
 }
 
-struct directoryentrycollection *directoryentrycollection_getfromarchive(struct BUFFEREDFILE *bfile, char *path, char *root)
+struct directoryentrycollection *directoryentrycollection_getfromarchive(struct BUFFEREDFILE *bfile, char *path, char *root, struct progress *progress)
 {
 	struct directoryentrycollection *collection = directoryentrycollection_new();
 
@@ -799,12 +903,19 @@ struct directoryentrycollection *directoryentrycollection_getfromarchive(struct 
 			if (root != 0)
 				rpath = relativepath(s.chars, root);
 
+			if (ISFLAG(flags, F_VERBOSE)) {
+				if (ISFLAG(flags, F_SHOWPROGRESS))
+					clearprogress(progress);
+
+				fprintf(stderr, "[%s] %s\n", path, s.chars);
+			}
+
+			if (ISFLAG(flags, F_SHOWPROGRESS))
+				showprogress(progress, 1);
+
 			if (rpath != 0)
 			{
 				foundone = 1;
-
-				if (ISFLAG(flags, F_VERBOSE))
-					fprintf(stderr, "[%s] %s\n", path, s.chars);
 
 				sha256 sha256_state;
 				sha256_init(&sha256_state);
@@ -826,6 +937,13 @@ struct directoryentrycollection *directoryentrycollection_getfromarchive(struct 
 				sha256_finalize_bytes(&sha256_state, direntry.hash);
 
 				directoryentrycollection_add(collection, &direntry);
+
+				if (ISFLAG(flags, F_SHOWPROGRESS)) {
+					++progress->filesprocessed;
+
+					if (archive_entry_size_is_set(entry))
+						progress->bytesprocessed += archive_entry_size(entry);
+				}
 			}
 			else
 			{
@@ -846,15 +964,19 @@ struct directoryentrycollection *directoryentrycollection_getfromarchive(struct 
 			if (rpath != 0) {
 				foundone = 1;
 
-				if (ISFLAG(flags, F_VERBOSE))
-					fprintf(stderr, "[%s] %s\n", path, s.chars);
-
 				struct directoryentry direntry;
 				direntry.name = string_fromchars(rpath);
 				direntry.fullpath = string_fromchars(s.chars);
 				direntry.type = DT_DIR;
 
 				directoryentrycollection_add(collection, &direntry);
+
+				if (ISFLAG(flags, F_SHOWPROGRESS)) {
+					++progress->filesprocessed;
+
+					if (archive_entry_size_is_set(entry))
+						progress->bytesprocessed += archive_entry_size(entry);
+				}
 			}
 			else {
 				archive_read_data_skip(a);
@@ -879,7 +1001,7 @@ struct directoryentrycollection *directoryentrycollection_getfromarchive(struct 
 	return collection;
 }
 
-struct directoryentrycollection *directoryentrycollection_getfromhashfile(struct BUFFEREDFILE *bfile, char *path, char *root)
+struct directoryentrycollection *directoryentrycollection_getfromhashfile(struct BUFFEREDFILE *bfile, char *path, char *root, struct progress *progress)
 {
 	struct directoryentry entry;
 
@@ -913,10 +1035,19 @@ struct directoryentrycollection *directoryentrycollection_getfromhashfile(struct
 						if (result == 1) {
 							foundone = 1;
 
-							if (ISFLAG(flags, F_VERBOSE))
-								fprintf(stderr, "[%s] %s\n", path, entry.fullpath.chars);
-
 							directoryentrycollection_add(collection, &entry);
+
+							if (ISFLAG(flags, F_VERBOSE)) {
+								if (ISFLAG(flags, F_SHOWPROGRESS))
+									clearprogress(progress);
+
+								fprintf(stderr, "[%s] %s\n", path, entry.fullpath.chars);
+							}
+
+							if (ISFLAG(flags, F_SHOWPROGRESS)) {
+								showprogress(progress, 0);
+								++progress->filesprocessed;
+							}
 						}
 						else if (result == -1) {
 							fatalerror("hashfile contains errors in line %d:\n\"%s\"", lineno, line.chars);
@@ -949,7 +1080,7 @@ int use_stdin(const char *path) {
 	return strcmp(path, "-") == 0;
 }
 
-struct directoryentrycollection *directoryentrycollection_getfromfile(char *path, char *root)
+struct directoryentrycollection *directoryentrycollection_getfromfile(char *path, char *root, struct progress *progress)
 {
 	FILE *f;
 	struct BUFFEREDFILE *bfile;
@@ -965,10 +1096,10 @@ struct directoryentrycollection *directoryentrycollection_getfromfile(char *path
 		bfile = bufferedfile_init(f, ARCHIVE_BUFFER_SIZE);
 		if (bfile)
 		{
-			collection = directoryentrycollection_getfromhashfile(bfile, path, root);
+			collection = directoryentrycollection_getfromhashfile(bfile, path, root, progress);
 
 			if (!collection)
-				collection = directoryentrycollection_getfromarchive(bfile, path, root);
+				collection = directoryentrycollection_getfromarchive(bfile, path, root, progress);
 
 			bufferedfile_destroy(bfile);
 		}
@@ -1005,6 +1136,7 @@ void help_text()
 	printf(" -s --short             tag files added, removed or modified with +, -, ~\n");
 	printf("                        instead of Added, Removed, and Modified\n");
 	printf(" -v --verbose           verbosely list the files being processed\n");
+	printf(" -p --progress          print number of files and bytes processed\n");
 	printf(" -V --version           print version number\n");
 	printf(" -h --help              display this help message\n\n");
 }
@@ -1016,6 +1148,7 @@ int main(int argc, char **argv)
 		{ "within", 'w', 1, 'w' },
 		{ "verbose", 'v', 0, 'v' },
 		{ "short", 's', 0, 's' },
+		{ "progress", 'p', 0, 'p' },
 		{ "version", 'V', 0, 'V' },
 		{ "help", 'h', 0, 'h' },
 		{ 0, 0, 0 }
@@ -1084,6 +1217,10 @@ int main(int argc, char **argv)
 				SETFLAG(flags, F_PRINTHASHES);
 				break;
 
+			case 'p':
+				SETFLAG(flags, F_SHOWPROGRESS);
+				break;
+
 			case 'V':
 				printf("%s %s\n", PROGRAM_NAME, DIRCHANGES_VERSION);
 				exit(0);
@@ -1143,6 +1280,12 @@ int main(int argc, char **argv)
 	struct directoryentrycollection *collection1 = 0;
 	struct directoryentrycollection *collection2 = 0;
 
+	struct progress progress1 = {0};
+	progress1.phase = !dir_to ? 0 : 1;
+
+	struct progress progress2 = {0};
+	progress2.phase = 2;
+
 	struct stat f1stat;
 	struct stat f2stat;
 
@@ -1153,9 +1296,9 @@ int main(int argc, char **argv)
 		fatalerror("unable to read or open '%s'", dir_from);
 
 	if (S_ISDIR(f1stat.st_mode)) {
-		collection1 = directoryentrycollection_getfromfilesystem(dir_from, within_from);
+		collection1 = directoryentrycollection_getfromfilesystem(dir_from, within_from, &progress1);
 	} else if (S_ISREG(f1stat.st_mode) || use_stdin(dir_from)) {
-		collection1 = directoryentrycollection_getfromfile(dir_from, within_from);
+		collection1 = directoryentrycollection_getfromfile(dir_from, within_from, &progress1);
 	} else {
 		fatalerror("%s is not a file or directory", dir_from);
 	}
@@ -1165,16 +1308,22 @@ int main(int argc, char **argv)
 			fatalerror("unable to read or open '%s'", dir_to);
 
 		if (S_ISDIR(f2stat.st_mode)) {
-			collection2 = directoryentrycollection_getfromfilesystem(dir_to, within_to);
+			collection2 = directoryentrycollection_getfromfilesystem(dir_to, within_to, &progress2);
 		} else if (S_ISREG(f2stat.st_mode) || use_stdin(dir_to)) {
-			collection2 = directoryentrycollection_getfromfile(dir_to, within_to);
+			collection2 = directoryentrycollection_getfromfile(dir_to, within_to, &progress2);
 		} else {
 			fatalerror("%s is not a file or directory", dir_to);
 		}
 	}
 
-	if (ISFLAG(flags, F_VERBOSE))
+	if (ISFLAG(flags, F_VERBOSE)) {
+		if (ISFLAG(flags, F_SHOWPROGRESS))
+			clearprogress(dir_to ? &progress2 : &progress1);
+
 		fprintf(stderr, "\n");
+	} else if (ISFLAG(flags, F_SHOWPROGRESS)) {
+		clearprogress(dir_to ? &progress2 : &progress1);
+	}
 
 	if (ISFLAG(flags, F_PRINTHASHES))
 		directoryentrycollection_printhashes(collection1);

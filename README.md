@@ -23,6 +23,7 @@ When FROM or TO is -, read archives or hashes from standard input.
  -s --short             tag files added, removed or modified with +, -, ~
                         instead of Added, Removed, and Modified
  -v --verbose           verbosely list the files being processed
+ -p --progress          print number of files and bytes processed
  -V --version           print version number
  -h --help              display this help message
 ```
