@@ -38,6 +38,7 @@
 #include <errno.h>
 #include <libgen.h>
 #include <stdlib.h>
+#include <err.h>
 
 #include "sha256/sha256.h"
 #include "getoptions.h"
@@ -98,26 +99,16 @@ void fatalerror(char *message, ...)
 
 	va_start(ap, message);
 
-	fprintf(stderr, "%s: ", program_name);
-
-	vfprintf(stderr, message, ap);
-
-	fprintf(stderr, "\n");
-
-	exit(1);
+	verrx(1, message, ap);
 }
 
-void warn(char *message, ...)
+void warning(char *message, ...)
 {
 	va_list ap;
 
 	va_start(ap, message);
 
-	fprintf(stderr, "%s: ", program_name);
-
-	vfprintf(stderr, message, ap);
-
-	fprintf(stderr, "\n");
+	vwarnx(message, ap);
 }
 
 void gethumansize(uint64_t size, double *humansize, char **humansizeunit) {
@@ -734,7 +725,7 @@ int directoryentry_addfromfilesystem(struct directoryentrycollection *collection
 	if (cd == 0)
 	{
 		clearprogress(progress);
-		warn("could not open %s", path);
+		warning("could not open %s", path);
 		return 0;
 	}
 
@@ -753,7 +744,7 @@ int directoryentry_addfromfilesystem(struct directoryentrycollection *collection
 
 			if (lstat(fullpath.chars, &st) != 0) {
 				clearprogress(progress);
-				warn("could not read from '%s'", dirinfo->d_name);
+				warning("could not read from '%s'", dirinfo->d_name);
 				string_free(fullpath);
 				continue;
 			}
@@ -835,7 +826,7 @@ int directoryentry_addfromfilesystem(struct directoryentrycollection *collection
 			else
 			{
 				clearprogress(progress);
-				warn("error obtaining hash for %s", s.chars);
+				warning("error obtaining hash for %s", s.chars);
 			}
 		}
 
@@ -1181,19 +1172,19 @@ int main(int argc, char **argv)
 				++withinoptcount;
 
 				if (withinoptcount > 2) {
-					warn("extra option '%s'", argv[optindex]);
+					warning("extra option '%s'", argv[optindex]);
 					errors = 1;
 				} else if (!dir_from) {
-					warn("'%s' must follow the argument it applies to", argv[optindex]);
+					warning("'%s' must follow the argument it applies to", argv[optindex]);
 					errors = 1;
 				} else if (!dir_to && withinoptcount == 2) {
-					warn("'%s' must follow the argument it applies to", argv[optindex]);
+					warning("'%s' must follow the argument it applies to", argv[optindex]);
 					errors = 1;
 				} else if (!dir_to && dir_from_position+1 != currentarg) {
-					warn("'%s' must immediately follow the argument it applies to", argv[optindex]);
+					warning("'%s' must immediately follow the argument it applies to", argv[optindex]);
 					errors = 1;
 				} else if (dir_to && dir_to_position+1 != currentarg) {
-					warn("'%s' must immediately follow the argument it applies to", argv[optindex]);
+					warning("'%s' must immediately follow the argument it applies to", argv[optindex]);
 					errors = 1;
 				} else {
 					if (dir_to != 0) {
@@ -1237,7 +1228,7 @@ int main(int argc, char **argv)
 					dir_to = argument;
 					dir_to_position = currentarg;
 				} else {
-					warn("extra argument '%s'", argument);
+					warning("extra argument '%s'", argument);
 					errors = 1;
 				}
 
@@ -1253,7 +1244,7 @@ int main(int argc, char **argv)
 	}
 
 	if (ISFLAG(flags, F_PRINTHASHES) && dir_to != 0) {
-		warn("extra argument '%s'", dir_to);
+		warning("extra argument '%s'", dir_to);
 		errors = 1;
 	}
 
